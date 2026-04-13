@@ -1,0 +1,106 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MemberStatus {
+  ACTIVE
+  EXPIRING
+  OVERDUE
+  INACTIVE
+}
+
+enum WorkoutLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+model Member {
+  id            String       @id @default(cuid())
+  fullName      String
+  email         String       @unique
+  phone         String?
+  dateOfBirth   DateTime?
+  joinedAt      DateTime     @default(now())
+  status        MemberStatus @default(ACTIVE)
+  notes         String?
+  subscription  Subscription?
+  attendances   Attendance[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+model Trainer {
+  id          String    @id @default(cuid())
+  fullName    String
+  email       String    @unique
+  phone       String?
+  specialty   String
+  bio         String?
+  workouts    Workout[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Workout {
+  id            String        @id @default(cuid())
+  title         String
+  description   String?
+  scheduledAt   DateTime
+  durationMin   Int
+  capacity      Int
+  level         WorkoutLevel  @default(BEGINNER)
+  trainerId     String
+  trainer       Trainer       @relation(fields: [trainerId], references: [id], onDelete: Restrict)
+  attendances   Attendance[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([scheduledAt])
+  @@index([trainerId])
+}
+
+model SubscriptionPlan {
+  id             String         @id @default(cuid())
+  name           String         @unique
+  priceCents     Int
+  durationDays   Int
+  description    String?
+  isActive       Boolean        @default(true)
+  subscriptions  Subscription[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model Subscription {
+  id          String            @id @default(cuid())
+  memberId    String            @unique
+  planId      String
+  startDate   DateTime
+  endDate     DateTime
+  active      Boolean           @default(true)
+  member      Member            @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  plan        SubscriptionPlan  @relation(fields: [planId], references: [id], onDelete: Restrict)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([planId])
+  @@index([endDate])
+}
+
+model Attendance {
+  id          String    @id @default(cuid())
+  memberId    String
+  workoutId   String
+  checkedInAt DateTime  @default(now())
+  member      Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  workout     Workout   @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, workoutId])
+  @@index([checkedInAt])
+}

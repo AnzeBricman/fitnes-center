@@ -1,69 +1,86 @@
-# 🏋️ Fitnes Center – Gym Management System
+# Fitnes Center
 
-Spletna aplikacija za upravljanje fitnes centra, ki omogoča enostavno vodenje članov, treningov, naročnin in trenerjev.
+Spletna aplikacija za upravljanje fitnes centra v `Next.js`, namenjena vodenju clanov, trenerjev, treningov, narocnin in osnovne administracije.
 
----
+## Jedro ideje
 
-## 🚀 Funkcionalnosti
+Projekt bo zgrajen kot moderna spletna aplikacija z `Next.js App Router`, kjer bo:
 
-### 🔧 CRUD sistem
-- Upravljanje članov
-- Upravljanje trenerjev
-- Upravljanje treningov
-- Upravljanje naročnin
+- admin upravljal clane, trenerje, treninge in narocnine
+- osebje spremljalo prisotnost in prihajajoce obveznosti
+- sistem pripravljal osnovne statistike obiska in rasti
+- aplikacija podpirala uvoz podatkov, email obvestila in PDF izvoz
 
----
+## Plan funkcionalnosti
 
-### 🛠️ Admin panel
-- Pregled aktivnih naročnin
-- Evidenca prisotnosti članov
-- Pregled prihajajočih plačil
-- Filtriranje in sortiranje podatkov
+### CRUD moduli
+- clani
+- trenerji
+- treningi
+- narocnine
 
----
+### Admin panel
+- pregled aktivnih narocnin
+- evidenca prisotnosti
+- prihajajoca placila
+- filtri in sortiranje
 
-### 📊 Vizualizacija podatkov
-- Graf obiska po dnevih in urah
-- Rast števila članov skozi čas
+### Analitika
+- obisk po dnevih in urah
+- rast stevila clanov
 
----
+### Dodatki
+- uvoz CSV ali Excel datotek
+- email opomniki in obvestila
+- PDF potrdila in racuni
+- povezava z zunanjim API za opise vaj in slike
 
-### 📂 Uvoz podatkov
-- Uvoz članov preko CSV ali Excel datotek
+## Tehnologije
 
----
+- `Next.js`
+- `React`
+- `TypeScript`
+- `CSS`
+- `Prisma` ali `Drizzle` za dostop do baze
+- `MySQL` ali `PostgreSQL`
 
-### 📧 Email sistem
-- Dobrodošlica novim članom
-- Opomnik za podaljšanje naročnine
-- Obvestila iz admin panela
+## Zacetek razvoja
 
----
-
-### 📄 PDF izvoz
-- Potrdilo o članstvu
-- Mesečni računi
-
----
-
-### 🌐 Zunanji API
-Uporaba :contentReference[oaicite:0]{index=0} API:
-- Avtomatski opisi vaj
-- Slike vaj
-- Dodatni podatki za treninge
-
----
-
-## 🧑‍💻 Tehnologije
-- Backend: PHP / Laravel
-- Baza: MySQL
-- Frontend: HTML, CSS, JavaScript
-- API integracija
-
----
-
-## ⚙️ Namestitev
-
-1. Kloniraj repozitorij:
+1. Namesti odvisnosti:
    ```bash
-   git clone https://github.com/your-username/fitnes-center.git
+   npm install
+   ```
+2. Nastavi lokalne spremenljivke:
+   ```bash
+   copy .env.example .env.local
+   ```
+3. V `.env.local` dodaj svoj Neon `DATABASE_URL`.
+4. Generiraj Prisma client in pripravi bazo:
+   ```bash
+   npm run db:generate
+   npm run db:push
+   ```
+5. Zazeni razvojni streznik:
+   ```bash
+   npm run dev
+   ```
+6. Odpri:
+   ```bash
+   http://localhost:3000
+   ```
+
+## Trenutno stanje
+
+Repo vsebuje zacetni `Next.js` skelet in landing/dashboard zasnovo, ki sluzi kot osnova za nadaljnji razvoj modulov.
+
+## Baza
+
+Projekt je pripravljen za `PostgreSQL` oziroma `Neon` prek `Prisma`.
+Zacetni modeli:
+
+- `Member`
+- `Trainer`
+- `Workout`
+- `SubscriptionPlan`
+- `Subscription`
+- `Attendance`
