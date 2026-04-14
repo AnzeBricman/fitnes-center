@@ -1,16 +1,17 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
-import { navigation } from "@/lib/mock-data";
+import { SidebarNav } from "@/components/sidebar-nav";
 
 type DashboardShellProps = {
   title: string;
   description: string;
+  actions?: ReactNode;
   children: ReactNode;
 };
 
 export function DashboardShell({
   title,
   description,
+  actions,
   children,
 }: DashboardShellProps) {
   return (
@@ -19,16 +20,16 @@ export function DashboardShell({
         <div className="brand-block">
           <span className="brand-kicker">Fitnes Center</span>
           <h1>Gym OS</h1>
-          <p>Osnova za interno administracijo, clane in urnike.</p>
+          <p>Uporabna osnova za clane, trenerje, narocnine, prisotnost in urnike.</p>
         </div>
 
-        <nav className="sidebar-nav" aria-label="Glavna navigacija">
-          {navigation.map((item) => (
-            <Link key={item.href} href={item.href} className="nav-link">
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        <div className="sidebar-summary">
+          <span className="section-kicker">Sistem</span>
+          <h3>Administracija v enem pogledu</h3>
+          <p>Dodaj clane, pripravi pakete, vodi urnik in spremljaj poteke narocnin.</p>
+        </div>
+
+        <SidebarNav />
       </aside>
 
       <section className="dashboard-content">
@@ -37,7 +38,11 @@ export function DashboardShell({
             <span className="eyebrow">Admin panel</span>
             <h2>{title}</h2>
           </div>
-          <p>{description}</p>
+
+          <div className="topbar-actions">
+            <p>{description}</p>
+            {actions}
+          </div>
         </header>
 
         {children}

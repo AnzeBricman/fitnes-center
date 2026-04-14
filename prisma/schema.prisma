@@ -20,6 +20,45 @@ enum WorkoutLevel {
   ADVANCED
 }
 
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  STRIPE
+  MANUAL
+}
+
+enum ImportFormat {
+  CSV
+  XLSX
+}
+
+enum ImportStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum EmailStatus {
+  DRAFT
+  SENT
+  FAILED
+}
+
+enum DocumentType {
+  MEMBERSHIP_CONFIRMATION
+  INVOICE
+}
+
+enum ExerciseSource {
+  MANUAL
+  API
+}
+
 model Member {
   id            String       @id @default(cuid())
   fullName      String
@@ -31,6 +70,9 @@ model Member {
   notes         String?
   subscription  Subscription?
   attendances   Attendance[]
+  payments      Payment[]
+  documents     Document[]
+  emails        EmailLog[]
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 }
@@ -71,6 +113,7 @@ model SubscriptionPlan {
   priceCents     Int
   durationDays   Int
   description    String?
+  stripePriceId  String?
   isActive       Boolean        @default(true)
   subscriptions  Subscription[]
   createdAt      DateTime       @default(now())
@@ -86,6 +129,8 @@ model Subscription {
   active      Boolean           @default(true)
   member      Member            @relation(fields: [memberId], references: [id], onDelete: Cascade)
   plan        SubscriptionPlan  @relation(fields: [planId], references: [id], onDelete: Restrict)
+  payments    Payment[]
+  documents   Document[]
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
 
@@ -103,4 +148,81 @@ model Attendance {
 
   @@unique([memberId, workoutId])
   @@index([checkedInAt])
+}
+
+model Payment {
+  id                      String          @id @default(cuid())
+  memberId                String
+  subscriptionId          String?
+  amountCents             Int
+  currency                String          @default("EUR")
+  provider                PaymentProvider @default(STRIPE)
+  status                  PaymentStatus   @default(PENDING)
+  description             String?
+  stripeCheckoutSessionId String?         @unique
+  stripePaymentIntentId   String?         @unique
+  paidAt                  DateTime?
+  member                  Member          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  subscription            Subscription?   @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+
+  @@index([memberId, status])
+  @@index([subscriptionId])
+}
+
+model ImportJob {
+  id         String       @id @default(cuid())
+  fileName   String
+  format     ImportFormat
+  status     ImportStatus @default(PENDING)
+  rowCount   Int          @default(0)
+  note       String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+}
+
+model EmailLog {
+  id          String      @id @default(cuid())
+  memberId     String?
+  recipient    String
+  subject      String
+  templateName String
+  body         String
+  status       EmailStatus @default(DRAFT)
+  provider     String?
+  sentAt       DateTime?
+  member       Member?     @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([recipient, status])
+}
+
+model Document {
+  id             String       @id @default(cuid())
+  memberId        String?
+  subscriptionId  String?
+  type           DocumentType
+  title          String
+  content        String
+  member         Member?       @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+model Exercise {
+  id          String         @id @default(cuid())
+  name        String
+  slug        String         @unique
+  description String
+  imageUrl    String?
+  targetArea  String
+  source      ExerciseSource @default(MANUAL)
+  externalId  String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([targetArea])
 }
