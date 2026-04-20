@@ -10,9 +10,9 @@ export default function NotFound() {
             <h3>Stran ne obstaja.</h3>
           </div>
           <div className="topbar-actions">
-            <p>Vrni se na dashboard in nadaljuj z upravljanjem fitnes centra.</p>
-            <Link href="/" className="ghost-link">
-              Nazaj na zacetek
+            <p>Vrni se v aplikacijo in nadaljuj z delom.</p>
+            <Link href="/login" className="ghost-link">
+              Pojdi na prijavo
             </Link>
           </div>
         </article>

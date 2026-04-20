@@ -1,12 +1,47 @@
 const {
   PrismaClient,
+  AttendanceMethod,
   MemberStatus,
   PaymentProvider,
   PaymentStatus,
   EmailStatus,
   DocumentType,
   ExerciseSource,
+  TrainerStatus,
+  WorkoutStatus,
 } = require("@prisma/client");
+const ROLE = {
+  ADMIN: "ADMIN",
+};
+
+const fs = require("node:fs");
+const path = require("node:path");
+
+function loadEnvIfMissing() {
+  if (process.env.DATABASE_URL) return;
+  const envPath = path.join(process.cwd(), ".env.local");
+  if (!fs.existsSync(envPath)) return;
+  const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const match = trimmed.match(/^([A-Z0-9_]+)\s*=\s*(.*)$/);
+    if (!match) continue;
+    const key = match[1];
+    let value = match[2];
+    if (
+      (value.startsWith("\"") && value.endsWith("\"")) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (!process.env[key]) {
+      process.env[key] = value;
+    }
+  }
+}
+
+loadEnvIfMissing();
 
 const prisma = new PrismaClient();
 
@@ -40,12 +75,6 @@ const exerciseSeed = [
 ];
 
 async function main() {
-  const existingMembers = await prisma.member.count();
-  if (existingMembers >= 20) {
-    console.log("Database already contains at least 20 members. Skipping seed.");
-    return;
-  }
-
   const trainers = await Promise.all(
     trainerSeed.map(([fullName, email, specialty], index) =>
       prisma.trainer.upsert({
@@ -54,6 +83,8 @@ async function main() {
           specialty,
           phone: `+38640${(111000 + index).toString().slice(-6)}`,
           bio: `${specialty} in personalni pristop k napredku.`,
+          status: TrainerStatus.ACTIVE,
+          startedAt: new Date(2025, 8, 1 + index),
         },
         create: {
           fullName,
@@ -61,6 +92,8 @@ async function main() {
           specialty,
           phone: `+38640${(111000 + index).toString().slice(-6)}`,
           bio: `${specialty} in personalni pristop k napredku.`,
+          status: TrainerStatus.ACTIVE,
+          startedAt: new Date(2025, 8, 1 + index),
         },
       }),
     ),
@@ -116,8 +149,11 @@ async function main() {
             durationMin: 45 + (index % 3) * 15,
             capacity: 12 + (index % 4) * 2,
             level: ["BEGINNER", "INTERMEDIATE", "ADVANCED"][index % 3],
+            status: WorkoutStatus.SCHEDULED,
             trainerId: trainers[index % trainers.length].id,
             description: "Skupinski termin za napredek v moci, kondiciji in mobilnosti.",
+            location: index % 2 === 0 ? "Dvorana A" : "Dvorana B",
+            type: ["HIIT", "Strength", "Mobility"][index % 3],
           },
         }),
       ),
@@ -131,11 +167,18 @@ async function main() {
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + plan.durationDays);
 
-    const subscription = await prisma.subscription.upsert({
-      where: { memberId: member.id },
-      update: { planId: plan.id, startDate, endDate, active: true },
-      create: { memberId: member.id, planId: plan.id, startDate, endDate, active: true },
+    const existingSubscription = await prisma.subscription.findFirst({
+      where: { memberId: member.id, planId: plan.id },
     });
+
+    const subscription = existingSubscription
+      ? await prisma.subscription.update({
+          where: { id: existingSubscription.id },
+          data: { startDate, endDate, active: true, status: "ACTIVE" },
+        })
+      : await prisma.subscription.create({
+          data: { memberId: member.id, planId: plan.id, startDate, endDate, active: true, status: "ACTIVE" },
+        });
 
     const existingPayment = await prisma.payment.findFirst({
       where: { memberId: member.id, subscriptionId: subscription.id },
@@ -198,6 +241,7 @@ async function main() {
           memberId: members[index % members.length].id,
           workoutId: workouts[index % workouts.length].id,
           checkedInAt: new Date(2026, 3, 10 + (index % 5), 6 + (index % 10), 15, 0),
+          method: AttendanceMethod.MANUAL,
         },
       });
     }
@@ -227,6 +271,41 @@ async function main() {
         status: "COMPLETED",
         rowCount: members.length,
         note: "Zacetni demo podatki.",
+      },
+    });
+  }
+
+  if (!(await prisma.settings.findUnique({ where: { id: "default" } }))) {
+    await prisma.settings.create({
+      data: {
+        id: "default",
+        gymName: "Fitnes Center",
+        email: "info@fitnes-center.si",
+        phone: "+386 40 123 456",
+        address: "Ljubljana, Slovenija",
+        reminderDays: 7,
+        currency: "EUR",
+        smtpHost: "",
+        smtpPort: null,
+        smtpUser: "",
+        smtpFrom: "fitnes-center@example.com",
+      },
+    });
+  }
+
+  const adminEmail = "admin@fitnes-center.si";
+  const existingAdmin = await prisma.user.findUnique({ where: { email: adminEmail } });
+  if (!existingAdmin) {
+    const crypto = require("node:crypto");
+    const salt = crypto.randomBytes(16);
+    const hash = crypto.scryptSync("admin123", salt, 64);
+    const passwordHash = `scrypt:${salt.toString("hex")}:${hash.toString("hex")}`;
+
+    await prisma.user.create({
+      data: {
+        email: adminEmail,
+        passwordHash,
+        role: ROLE.ADMIN,
       },
     });
   }

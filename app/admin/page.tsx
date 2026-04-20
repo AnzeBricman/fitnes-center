@@ -98,7 +98,7 @@ export default async function AdminPage() {
                   <span>{member.email}</span>
                 </div>
                 <div className="table-row-meta">
-                  <strong>{member.subscription?.plan.name ?? "Brez paketa"}</strong>
+                  <strong>{member.subscriptions[0]?.plan.name ?? "Brez paketa"}</strong>
                   <span>{formatDate(member.createdAt)}</span>
                 </div>
               </div>

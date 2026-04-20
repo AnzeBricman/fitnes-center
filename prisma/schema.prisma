@@ -14,10 +14,48 @@ enum MemberStatus {
   INACTIVE
 }
 
+enum Gender {
+  UNSPECIFIED
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum TrainerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum Role {
+  ADMIN
+  STAFF
+  TRAINER
+  MEMBER
+}
+
 enum WorkoutLevel {
   BEGINNER
   INTERMEDIATE
   ADVANCED
+}
+
+enum WorkoutStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  PENDING
+}
+
+enum AttendanceMethod {
+  MANUAL
+  TERMINAL
+  PORTAL
 }
 
 enum PaymentStatus {
@@ -65,14 +103,17 @@ model Member {
   email         String       @unique
   phone         String?
   dateOfBirth   DateTime?
+  address       String?
+  gender        Gender?
   joinedAt      DateTime     @default(now())
   status        MemberStatus @default(ACTIVE)
   notes         String?
-  subscription  Subscription?
+  subscriptions Subscription[]
   attendances   Attendance[]
   payments      Payment[]
   documents     Document[]
   emails        EmailLog[]
+  user          User?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 }
@@ -84,6 +125,8 @@ model Trainer {
   phone       String?
   specialty   String
   bio         String?
+  status      TrainerStatus @default(ACTIVE)
+  startedAt   DateTime?
   workouts    Workout[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -97,6 +140,9 @@ model Workout {
   durationMin   Int
   capacity      Int
   level         WorkoutLevel  @default(BEGINNER)
+  status        WorkoutStatus @default(SCHEDULED)
+  location      String?
+  type          String?
   trainerId     String
   trainer       Trainer       @relation(fields: [trainerId], references: [id], onDelete: Restrict)
   attendances   Attendance[]
@@ -122,11 +168,12 @@ model SubscriptionPlan {
 
 model Subscription {
   id          String            @id @default(cuid())
-  memberId    String            @unique
+  memberId    String
   planId      String
   startDate   DateTime
   endDate     DateTime
   active      Boolean           @default(true)
+  status      SubscriptionStatus @default(ACTIVE)
   member      Member            @relation(fields: [memberId], references: [id], onDelete: Cascade)
   plan        SubscriptionPlan  @relation(fields: [planId], references: [id], onDelete: Restrict)
   payments    Payment[]
@@ -136,15 +183,17 @@ model Subscription {
 
   @@index([planId])
   @@index([endDate])
+  @@index([memberId])
 }
 
 model Attendance {
   id          String    @id @default(cuid())
   memberId    String
-  workoutId   String
+  workoutId   String?
   checkedInAt DateTime  @default(now())
   member      Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  workout     Workout   @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  workout     Workout?  @relation(fields: [workoutId], references: [id], onDelete: SetNull)
+  method      AttendanceMethod @default(MANUAL)
 
   @@unique([memberId, workoutId])
   @@index([checkedInAt])
@@ -225,4 +274,46 @@ model Exercise {
   updatedAt   DateTime       @updatedAt
 
   @@index([targetArea])
+}
+
+model Settings {
+  id           String   @id @default("default")
+  gymName      String   @default("Fitnes Center")
+  address      String?
+  email        String?
+  phone        String?
+  logoUrl      String?
+  reminderDays Int      @default(7)
+  currency     String   @default("EUR")
+  pdfFooter    String?
+  smtpHost     String?
+  smtpPort     Int?
+  smtpUser     String?
+  smtpFrom     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(MEMBER)
+  memberId     String?  @unique
+  member       Member?  @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  sessions     Session[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }

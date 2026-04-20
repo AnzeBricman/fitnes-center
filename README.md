@@ -73,6 +73,18 @@ Projekt bo zgrajen kot moderna spletna aplikacija z `Next.js App Router`, kjer b
 
 Repo vsebuje zacetni `Next.js` skelet in landing/dashboard zasnovo, ki sluzi kot osnova za nadaljnji razvoj modulov.
 
+## Pokrite funkcionalnosti
+
+- prijava (demo), nadzorna plosca in navigacija admin panela
+- clani (CRUD, profil, urejanje)
+- trenerji (CRUD, profil, urejanje)
+- treningi (CRUD, podrobnosti, prisotnost)
+- narocninski paketi in aktivne narocnine
+- prihajajoca placila in opomniki
+- prisotnost (rocni vnos, filtriranje)
+- analitika, uvoz, email obvestila, PDF izvoz
+- sistemske nastavitve
+
 ## Baza
 
 Projekt je pripravljen za `PostgreSQL` oziroma `Neon` prek `Prisma`.

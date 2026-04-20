@@ -1,24 +1,34 @@
-import { EmailStatus, PaymentStatus } from "@prisma/client";
+import { EmailStatus, PaymentStatus, type Prisma, SubscriptionStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export async function getDashboardData() {
   const now = new Date();
   const inSevenDays = new Date(now);
   inSevenDays.setDate(inSevenDays.getDate() + 7);
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const endOfToday = new Date(now);
+  endOfToday.setHours(23, 59, 59, 999);
 
   const [
     memberCount,
     trainerCount,
     activeSubscriptions,
+    expiredSubscriptions,
+    todayAttendance,
+    todayWorkouts,
     upcomingPayments,
     upcomingWorkouts,
     recentMembers,
     popularPlans,
     recentPayments,
   ] = await Promise.all([
-    prisma.member.count(),
+    prisma.member.count({ where: { status: { not: "INACTIVE" } } }),
     prisma.trainer.count(),
     prisma.subscription.count({ where: { active: true, endDate: { gte: now } } }),
+    prisma.subscription.count({ where: { endDate: { lt: now } } }),
+    prisma.attendance.count({ where: { checkedInAt: { gte: startOfToday, lte: endOfToday } } }),
+    prisma.workout.count({ where: { scheduledAt: { gte: startOfToday, lte: endOfToday } } }),
     prisma.subscription.count({
       where: { active: true, endDate: { gte: now, lte: inSevenDays } },
     }),
@@ -29,7 +39,14 @@ export async function getDashboardData() {
       take: 6,
     }),
     prisma.member.findMany({
-      include: { subscription: { include: { plan: true } } },
+      include: {
+        subscriptions: {
+          where: { active: true },
+          include: { plan: true },
+          orderBy: { endDate: "desc" },
+          take: 1,
+        },
+      },
       orderBy: { createdAt: "desc" },
       take: 6,
     }),
@@ -49,7 +66,10 @@ export async function getDashboardData() {
     stats: [
       { label: "Aktivni clani", value: memberCount.toString(), detail: "Skupno registriranih v sistemu" },
       { label: "Aktivne narocnine", value: activeSubscriptions.toString(), detail: "Veljavne danes" },
+      { label: "Potekle narocnine", value: expiredSubscriptions.toString(), detail: "Neveljavne" },
+      { label: "Danesnja prisotnost", value: todayAttendance.toString(), detail: "Evidentirani prihodi" },
       { label: "Trenerji", value: trainerCount.toString(), detail: "Aktivna ekipa" },
+      { label: "Danesnji treningi", value: todayWorkouts.toString(), detail: "Planirani termini" },
       { label: "Prihajajoca placila", value: upcomingPayments.toString(), detail: "Narocnine v 7 dneh" },
     ],
     upcomingWorkouts,
@@ -83,7 +103,12 @@ export async function getMembersPageData(query?: { search?: string; status?: str
     prisma.member.findMany({
       where,
       include: {
-        subscription: { include: { plan: true } },
+        subscriptions: {
+          where: { active: true },
+          include: { plan: true },
+          orderBy: { endDate: "desc" },
+          take: 1,
+        },
         _count: { select: { attendances: true, payments: true } },
       },
       orderBy,
@@ -136,7 +161,9 @@ export async function getSubscriptionsPageData(query?: { sort?: string; status?:
       orderBy: { priceCents: "asc" },
     }),
     prisma.member.findMany({
-      where: { subscription: { is: null } },
+      where: {
+        subscriptions: { none: { active: true } },
+      },
       orderBy: { fullName: "asc" },
     }),
     prisma.subscription.findMany({
@@ -155,6 +182,38 @@ export async function getSubscriptionsPageData(query?: { sort?: string; status?:
   ]);
 
   return { plans, members, subscriptions, payments };
+}
+
+export async function getActiveSubscriptionsPageData(query?: { status?: string }) {
+  const now = new Date();
+  const inThirtyDays = new Date(now);
+  inThirtyDays.setDate(inThirtyDays.getDate() + 30);
+
+  const where: Prisma.SubscriptionWhereInput =
+    query?.status === "expiring"
+      ? { active: true, endDate: { lte: inThirtyDays, gte: now } }
+    : query?.status === "expired"
+        ? { endDate: { lt: now } }
+        : query?.status === "pending"
+          ? { status: SubscriptionStatus.PENDING }
+          : { active: true, endDate: { gte: now } };
+
+  const subscriptions = await prisma.subscription.findMany({
+    where,
+    include: {
+      member: true,
+      plan: true,
+      payments: { orderBy: { createdAt: "desc" }, take: 1 },
+    },
+    orderBy: { endDate: "asc" },
+  });
+
+  return {
+    subscriptions: subscriptions.map((subscription) => ({
+      ...subscription,
+      payment: subscription.payments[0] ?? null,
+    })),
+  };
 }
 
 export async function getAnalyticsPageData() {
@@ -179,6 +238,44 @@ export async function getAnalyticsPageData() {
     .map(([date, count]) => ({ date, count }));
 
   return { visitByHour, memberGrowth, attendanceCount: attendances.length };
+}
+
+export async function getAttendancePageData(query?: { member?: string; workout?: string }) {
+  const where = {
+    ...(query?.member ? { memberId: query.member } : {}),
+    ...(query?.workout ? { workoutId: query.workout } : {}),
+  };
+
+  const [attendances, members, workouts] = await Promise.all([
+    prisma.attendance.findMany({
+      where,
+      include: { member: true, workout: { include: { trainer: true } } },
+      orderBy: { checkedInAt: "desc" },
+      take: 60,
+    }),
+    prisma.member.findMany({ orderBy: { fullName: "asc" } }),
+    prisma.workout.findMany({ include: { trainer: true }, orderBy: { scheduledAt: "asc" } }),
+  ]);
+
+  return { attendances, members, workouts };
+}
+
+export async function getUpcomingPaymentsData() {
+  const now = new Date();
+  const inThirtyDays = new Date(now);
+  inThirtyDays.setDate(inThirtyDays.getDate() + 30);
+
+  const subscriptions = await prisma.subscription.findMany({
+    where: { active: true, endDate: { gte: now, lte: inThirtyDays } },
+    include: {
+      member: true,
+      plan: true,
+      payments: { orderBy: { createdAt: "desc" }, take: 1 },
+    },
+    orderBy: { endDate: "asc" },
+  });
+
+  return subscriptions;
 }
 
 export async function getImportPageData() {
@@ -214,4 +311,50 @@ export async function getAdminOverviewForLanding() {
   ]);
 
   return { plans, paymentsPending, emailsSent, documentsCount };
+}
+
+export async function getMemberProfileData(id: string) {
+  const member = await prisma.member.findUnique({
+    where: { id },
+    include: {
+      subscriptions: {
+        include: { plan: true, payments: { orderBy: { createdAt: "desc" } } },
+        orderBy: { endDate: "desc" },
+      },
+      attendances: { include: { workout: { include: { trainer: true } } }, orderBy: { checkedInAt: "desc" } },
+      payments: { orderBy: { createdAt: "desc" } },
+    },
+  });
+
+  return member;
+}
+
+export async function getTrainerProfileData(id: string) {
+  const trainer = await prisma.trainer.findUnique({
+    where: { id },
+    include: {
+      workouts: {
+        include: { attendances: true },
+        orderBy: { scheduledAt: "asc" },
+      },
+    },
+  });
+
+  return trainer;
+}
+
+export async function getWorkoutProfileData(id: string) {
+  const workout = await prisma.workout.findUnique({
+    where: { id },
+    include: {
+      trainer: true,
+      attendances: { include: { member: true }, orderBy: { checkedInAt: "desc" } },
+    },
+  });
+
+  return workout;
+}
+
+export async function getSettingsData() {
+  return prisma.settings.findUnique({ where: { id: "default" } });
 }

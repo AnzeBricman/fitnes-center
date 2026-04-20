@@ -1,19 +1,28 @@
 import type { ReactNode } from "react";
 import { SidebarNav } from "@/components/sidebar-nav";
+import { requireRole } from "@/lib/auth";
+import type { AppRole } from "@/lib/roles";
+import { DASHBOARD_ROLES } from "@/lib/roles";
+import Link from "next/link";
 
 type DashboardShellProps = {
   title: string;
   description: string;
   actions?: ReactNode;
+  roles?: AppRole[];
   children: ReactNode;
 };
 
-export function DashboardShell({
+export async function DashboardShell({
   title,
   description,
   actions,
+  roles = DASHBOARD_ROLES,
   children,
 }: DashboardShellProps) {
+  const user = await requireRole(roles);
+  const displayName = user.member?.fullName ?? user.email;
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -41,7 +50,12 @@ export function DashboardShell({
 
           <div className="topbar-actions">
             <p>{description}</p>
-            {actions}
+            <div className="header-actions">
+              <span className="support-note">{displayName}</span>
+              <Link className="ghost-link" href="/account">Moj racun</Link>
+              <Link className="ghost-link" href="/logout">Odjava</Link>
+              {actions}
+            </div>
           </div>
         </header>
 

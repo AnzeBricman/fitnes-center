@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Fitnes Center",
-  description: "Gym management sistem v Next.js za clane, trenerje in narocnine.",
+  description: "Poslovna aplikacija za upravljanje fitnes centra, clanov, trenerjev in narocnin.",
 };
 
 export default function RootLayout({

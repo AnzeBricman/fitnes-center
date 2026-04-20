@@ -8,18 +8,30 @@ import {
   EmailStatus,
   ExerciseSource,
   ImportStatus,
+  Gender,
   MemberStatus,
+  AttendanceMethod,
   PaymentProvider,
   PaymentStatus,
+  SubscriptionStatus,
   WorkoutLevel,
+  WorkoutStatus,
+  TrainerStatus,
 } from "@prisma/client";
 import { sendEmailMessage } from "@/lib/email";
 import { fetchExercisesFromApi } from "@/lib/exercise-api";
 import { prisma } from "@/lib/prisma";
+import { ROLE } from "@/lib/roles";
 import { getBaseUrl, getStripe } from "@/lib/stripe";
+import { createSession, hashPassword, verifyPassword, clearSession } from "@/lib/auth";
+import { cookies } from "next/headers";
 
 function getString(formData: FormData, key: string) {
   return formData.get(key)?.toString().trim() ?? "";
+}
+
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase();
 }
 
 function getOptionalString(formData: FormData, key: string) {
@@ -35,6 +47,16 @@ function getDecimalCents(formData: FormData, key: string) {
   return Math.round(Number.parseFloat(getString(formData, key)) * 100);
 }
 
+function getOptionalDate(formData: FormData, key: string) {
+  const value = getString(formData, key);
+  return value ? new Date(value) : null;
+}
+
+function getDate(formData: FormData, key: string) {
+  const value = getOptionalDate(formData, key);
+  return value ?? new Date(NaN);
+}
+
 function adminPaths() {
   return [
     "/admin",
@@ -43,10 +65,14 @@ function adminPaths() {
     "/admin/workouts",
     "/admin/subscriptions",
     "/admin/analytics",
+    "/admin/attendance",
+    "/admin/active-subscriptions",
+    "/admin/upcoming-payments",
     "/admin/imports",
     "/admin/emails",
     "/admin/documents",
     "/admin/exercises",
+    "/admin/settings",
   ];
 }
 
@@ -69,6 +95,10 @@ export async function createMember(formData: FormData) {
       fullName,
       email,
       phone: getOptionalString(formData, "phone"),
+      address: getOptionalString(formData, "address"),
+      gender: getOptionalString(formData, "gender") as Gender | null,
+      dateOfBirth: getOptionalDate(formData, "dateOfBirth"),
+      joinedAt: getOptionalDate(formData, "joinedAt") ?? new Date(),
       notes: getOptionalString(formData, "notes"),
       status: (getString(formData, "status") || "ACTIVE") as MemberStatus,
     },
@@ -92,8 +122,39 @@ export async function createMember(formData: FormData) {
 export async function deleteMember(formData: FormData) {
   const id = getString(formData, "id");
   if (!id) return;
-  await prisma.member.delete({ where: { id } });
+  await prisma.member.update({
+    where: { id },
+    data: { status: MemberStatus.INACTIVE },
+  });
   revalidateAdmin();
+}
+
+export async function updateMember(formData: FormData) {
+  const id = getString(formData, "id");
+  const fullName = getString(formData, "fullName");
+  const email = getString(formData, "email");
+
+  if (!id || !fullName || !email) {
+    return;
+  }
+
+  await prisma.member.update({
+    where: { id },
+    data: {
+      fullName,
+      email,
+      phone: getOptionalString(formData, "phone"),
+      address: getOptionalString(formData, "address"),
+      gender: getOptionalString(formData, "gender") as Gender | null,
+      dateOfBirth: getOptionalDate(formData, "dateOfBirth"),
+      joinedAt: getOptionalDate(formData, "joinedAt") ?? new Date(),
+      notes: getOptionalString(formData, "notes"),
+      status: (getString(formData, "status") || "ACTIVE") as MemberStatus,
+    },
+  });
+
+  revalidateAdmin();
+  redirect(`/admin/members/${id}`);
 }
 
 export async function createTrainer(formData: FormData) {
@@ -112,6 +173,8 @@ export async function createTrainer(formData: FormData) {
       specialty,
       phone: getOptionalString(formData, "phone"),
       bio: getOptionalString(formData, "bio"),
+      status: (getString(formData, "status") || "ACTIVE") as TrainerStatus,
+      startedAt: getOptionalDate(formData, "startedAt"),
     },
   });
 
@@ -123,6 +186,33 @@ export async function deleteTrainer(formData: FormData) {
   if (!id) return;
   await prisma.trainer.delete({ where: { id } });
   revalidateAdmin();
+}
+
+export async function updateTrainer(formData: FormData) {
+  const id = getString(formData, "id");
+  const fullName = getString(formData, "fullName");
+  const email = getString(formData, "email");
+  const specialty = getString(formData, "specialty");
+
+  if (!id || !fullName || !email || !specialty) {
+    return;
+  }
+
+  await prisma.trainer.update({
+    where: { id },
+    data: {
+      fullName,
+      email,
+      specialty,
+      phone: getOptionalString(formData, "phone"),
+      bio: getOptionalString(formData, "bio"),
+      status: (getString(formData, "status") || "ACTIVE") as TrainerStatus,
+      startedAt: getOptionalDate(formData, "startedAt"),
+    },
+  });
+
+  revalidateAdmin();
+  redirect(`/admin/trainers/${id}`);
 }
 
 export async function createPlan(formData: FormData) {
@@ -146,6 +236,60 @@ export async function createPlan(formData: FormData) {
   revalidateAdmin();
 }
 
+export async function updatePlan(formData: FormData) {
+  const id = getString(formData, "id");
+  const name = getString(formData, "name");
+  const priceCents = getDecimalCents(formData, "price");
+  const durationDays = getInt(formData, "durationDays");
+
+  if (!id || !name || Number.isNaN(priceCents) || Number.isNaN(durationDays)) {
+    return;
+  }
+
+  await prisma.subscriptionPlan.update({
+    where: { id },
+    data: {
+      name,
+      priceCents,
+      durationDays,
+      description: getOptionalString(formData, "description"),
+      isActive: getString(formData, "isActive") !== "false",
+    },
+  });
+
+  revalidateAdmin();
+}
+
+async function trainerHasConflict(
+  trainerId: string,
+  start: Date,
+  durationMin: number,
+  excludeWorkoutId?: string,
+) {
+  const dayStart = new Date(start);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(start);
+  dayEnd.setHours(23, 59, 59, 999);
+
+  const workouts = await prisma.workout.findMany({
+    where: {
+      trainerId,
+      scheduledAt: { gte: dayStart, lte: dayEnd },
+      ...(excludeWorkoutId ? { NOT: { id: excludeWorkoutId } } : {}),
+    },
+    select: { scheduledAt: true, durationMin: true },
+  });
+
+  const startMs = start.getTime();
+  const endMs = startMs + durationMin * 60_000;
+
+  return workouts.some((workout) => {
+    const workoutStart = workout.scheduledAt.getTime();
+    const workoutEnd = workoutStart + workout.durationMin * 60_000;
+    return startMs < workoutEnd && endMs > workoutStart;
+  });
+}
+
 export async function createWorkout(formData: FormData) {
   const title = getString(formData, "title");
   const trainerId = getString(formData, "trainerId");
@@ -157,15 +301,23 @@ export async function createWorkout(formData: FormData) {
     return;
   }
 
+  const start = new Date(scheduledAt);
+  if (await trainerHasConflict(trainerId, start, durationMin)) {
+    return;
+  }
+
   await prisma.workout.create({
     data: {
       title,
       trainerId,
-      scheduledAt: new Date(scheduledAt),
+      scheduledAt: start,
       durationMin,
       capacity,
       description: getOptionalString(formData, "description"),
       level: (getString(formData, "level") || "BEGINNER") as WorkoutLevel,
+      status: (getString(formData, "status") || "SCHEDULED") as WorkoutStatus,
+      location: getOptionalString(formData, "location"),
+      type: getOptionalString(formData, "type"),
     },
   });
 
@@ -179,6 +331,43 @@ export async function deleteWorkout(formData: FormData) {
   revalidateAdmin();
 }
 
+export async function updateWorkout(formData: FormData) {
+  const id = getString(formData, "id");
+  const title = getString(formData, "title");
+  const trainerId = getString(formData, "trainerId");
+  const scheduledAt = getString(formData, "scheduledAt");
+  const durationMin = getInt(formData, "durationMin");
+  const capacity = getInt(formData, "capacity");
+
+  if (!id || !title || !trainerId || !scheduledAt || Number.isNaN(durationMin) || Number.isNaN(capacity)) {
+    return;
+  }
+
+  const start = new Date(scheduledAt);
+  if (await trainerHasConflict(trainerId, start, durationMin, id)) {
+    return;
+  }
+
+  await prisma.workout.update({
+    where: { id },
+    data: {
+      title,
+      trainerId,
+      scheduledAt: start,
+      durationMin,
+      capacity,
+      description: getOptionalString(formData, "description"),
+      level: (getString(formData, "level") || "BEGINNER") as WorkoutLevel,
+      status: (getString(formData, "status") || "SCHEDULED") as WorkoutStatus,
+      location: getOptionalString(formData, "location"),
+      type: getOptionalString(formData, "type"),
+    },
+  });
+
+  revalidateAdmin();
+  redirect(`/admin/workouts/${id}`);
+}
+
 export async function checkInAttendance(formData: FormData) {
   const memberId = getString(formData, "memberId");
   const workoutId = getString(formData, "workoutId");
@@ -189,6 +378,29 @@ export async function checkInAttendance(formData: FormData) {
     update: { checkedInAt: new Date() },
     create: { memberId, workoutId },
   });
+
+  revalidateAdmin();
+}
+
+export async function createAttendance(formData: FormData) {
+  const memberId = getString(formData, "memberId");
+  if (!memberId) return;
+
+  const workoutId = getOptionalString(formData, "workoutId");
+  const checkedInAt = getOptionalDate(formData, "checkedInAt") ?? new Date();
+  const method = (getString(formData, "method") || "MANUAL") as AttendanceMethod;
+
+  if (workoutId) {
+    await prisma.attendance.upsert({
+      where: { memberId_workoutId: { memberId, workoutId } },
+      update: { checkedInAt, method },
+      create: { memberId, workoutId, checkedInAt, method },
+    });
+  } else {
+    await prisma.attendance.create({
+      data: { memberId, checkedInAt, method },
+    });
+  }
 
   revalidateAdmin();
 }
@@ -215,21 +427,25 @@ export async function createSubscription(formData: FormData) {
   const endDate = new Date(startDate);
   endDate.setDate(endDate.getDate() + plan.durationDays);
 
-  const subscription = await prisma.subscription.upsert({
-    where: { memberId },
-    update: {
-      planId,
-      startDate,
-      endDate,
-      active: true,
-    },
-    create: {
+  await prisma.subscription.updateMany({
+    where: { memberId, active: true },
+    data: { active: false, status: SubscriptionStatus.EXPIRED },
+  });
+
+  const subscription = await prisma.subscription.create({
+    data: {
       memberId,
       planId,
       startDate,
       endDate,
       active: true,
+      status: SubscriptionStatus.ACTIVE,
     },
+  });
+
+  await prisma.member.update({
+    where: { id: memberId },
+    data: { status: MemberStatus.ACTIVE },
   });
 
   await prisma.document.createMany({
@@ -251,6 +467,64 @@ export async function createSubscription(formData: FormData) {
     ],
   });
 
+  revalidateAdmin();
+}
+
+export async function extendSubscription(formData: FormData) {
+  const id = getString(formData, "id");
+  const days = getInt(formData, "days");
+  if (!id || Number.isNaN(days)) return;
+
+  const subscription = await prisma.subscription.findUnique({ where: { id } });
+  if (!subscription) return;
+
+  const endDate = new Date(subscription.endDate);
+  endDate.setDate(endDate.getDate() + days);
+
+  await prisma.subscription.update({
+    where: { id },
+    data: { endDate, status: SubscriptionStatus.ACTIVE, active: true },
+  });
+
+  await prisma.member.update({
+    where: { id: subscription.memberId },
+    data: { status: MemberStatus.ACTIVE },
+  });
+
+  revalidateAdmin();
+}
+
+export async function updateSubscriptionStatus(formData: FormData) {
+  const id = getString(formData, "id");
+  const status = getString(formData, "status");
+  if (!id || !status) return;
+
+  await prisma.subscription.update({
+    where: { id },
+    data: {
+      status: status as SubscriptionStatus,
+      active: status === "ACTIVE",
+    },
+  });
+
+  const subscription = await prisma.subscription.findUnique({ where: { id } });
+  if (subscription && status !== "ACTIVE") {
+    await prisma.member.update({
+      where: { id: subscription.memberId },
+      data: { status: MemberStatus.INACTIVE },
+    });
+  }
+
+  revalidateAdmin();
+}
+
+export async function markPaymentPaid(formData: FormData) {
+  const id = getString(formData, "id");
+  if (!id) return;
+  await prisma.payment.update({
+    where: { id },
+    data: { status: PaymentStatus.PAID, paidAt: new Date() },
+  });
   revalidateAdmin();
 }
 
@@ -344,6 +618,168 @@ export async function syncStripePayment(sessionId: string) {
 
   revalidateAdmin();
   return { ok: isPaid };
+}
+
+export async function updateSettings(formData: FormData) {
+  const gymName = getString(formData, "gymName");
+  if (!gymName) return;
+
+  await prisma.settings.upsert({
+    where: { id: "default" },
+    update: {
+      gymName,
+      address: getOptionalString(formData, "address"),
+      email: getOptionalString(formData, "email"),
+      phone: getOptionalString(formData, "phone"),
+      logoUrl: getOptionalString(formData, "logoUrl"),
+      reminderDays: getInt(formData, "reminderDays") || 7,
+      currency: getString(formData, "currency") || "EUR",
+      pdfFooter: getOptionalString(formData, "pdfFooter"),
+      smtpHost: getOptionalString(formData, "smtpHost"),
+      smtpPort: getInt(formData, "smtpPort") || null,
+      smtpUser: getOptionalString(formData, "smtpUser"),
+      smtpFrom: getOptionalString(formData, "smtpFrom"),
+    },
+    create: {
+      id: "default",
+      gymName,
+      address: getOptionalString(formData, "address"),
+      email: getOptionalString(formData, "email"),
+      phone: getOptionalString(formData, "phone"),
+      logoUrl: getOptionalString(formData, "logoUrl"),
+      reminderDays: getInt(formData, "reminderDays") || 7,
+      currency: getString(formData, "currency") || "EUR",
+      pdfFooter: getOptionalString(formData, "pdfFooter"),
+      smtpHost: getOptionalString(formData, "smtpHost"),
+      smtpPort: getInt(formData, "smtpPort") || null,
+      smtpUser: getOptionalString(formData, "smtpUser"),
+      smtpFrom: getOptionalString(formData, "smtpFrom"),
+    },
+  });
+
+  revalidateAdmin();
+}
+
+export async function registerUser(formData: FormData) {
+  const fullName = getString(formData, "fullName");
+  const email = normalizeEmail(getString(formData, "email"));
+  const password = getString(formData, "password");
+  const planId = getString(formData, "planId");
+
+  if (!fullName || !email || !password || !planId) {
+    redirect("/register?error=missing");
+  }
+
+  if (password.length < 8) {
+    redirect("/register?error=password");
+  }
+
+  const existingUser = await prisma.user.findUnique({ where: { email } });
+  if (existingUser) {
+    redirect("/register?error=exists");
+  }
+
+  const plan = await prisma.subscriptionPlan.findUnique({ where: { id: planId } });
+  if (!plan) {
+    redirect("/register?error=plan");
+  }
+
+  const member = await prisma.member.upsert({
+    where: { email },
+    update: { fullName, status: MemberStatus.ACTIVE },
+    create: { fullName, email, status: MemberStatus.ACTIVE, joinedAt: new Date() },
+  });
+
+  const startDate = new Date();
+  const endDate = new Date(startDate);
+  endDate.setDate(endDate.getDate() + plan.durationDays);
+
+  await prisma.subscription.create({
+    data: {
+      memberId: member.id,
+      planId: plan.id,
+      startDate,
+      endDate,
+      active: true,
+      status: SubscriptionStatus.ACTIVE,
+    },
+  });
+
+  const user = await prisma.user.create({
+    data: {
+      email,
+      passwordHash: hashPassword(password),
+      role: ROLE.MEMBER,
+      memberId: member.id,
+    },
+  });
+
+  await createSession(user.id);
+  redirect("/account");
+}
+
+export async function loginUser(formData: FormData) {
+  const email = normalizeEmail(getString(formData, "email"));
+  const password = getString(formData, "password");
+
+  if (!email || !password) {
+    redirect("/login?error=missing");
+  }
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user || !verifyPassword(password, user.passwordHash)) {
+    redirect("/login?error=invalid");
+  }
+
+  await createSession(user.id);
+  redirect(user.role === ROLE.MEMBER ? "/account" : "/admin");
+}
+
+export async function logoutUser() {
+  await clearSession();
+  redirect("/login");
+}
+
+export async function changeMyPlan(formData: FormData) {
+  const planId = getString(formData, "planId");
+  if (!planId) return;
+  const cookieStore = await cookies();
+  const token = cookieStore.get("fc_session")?.value;
+  if (!token) redirect("/login");
+
+  const session = await prisma.session.findUnique({
+    where: { token },
+    include: { user: { include: { member: true } } },
+  });
+
+  const memberId = session?.user.memberId;
+  if (!memberId) redirect("/login");
+
+  const plan = await prisma.subscriptionPlan.findUnique({ where: { id: planId } });
+  if (!plan) return;
+
+  await prisma.subscription.updateMany({
+    where: { memberId, active: true },
+    data: { active: false, status: SubscriptionStatus.EXPIRED },
+  });
+
+  const startDate = new Date();
+  const endDate = new Date(startDate);
+  endDate.setDate(endDate.getDate() + plan.durationDays);
+
+  await prisma.subscription.create({
+    data: {
+      memberId,
+      planId,
+      startDate,
+      endDate,
+      active: true,
+      status: SubscriptionStatus.ACTIVE,
+    },
+  });
+
+  revalidateAdmin();
+  redirect("/account");
 }
 
 export async function importMembers(formData: FormData) {
