@@ -1,26 +1,24 @@
-import { registerUser } from "@/app/actions";
-import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/utils";
-import { redirect } from "next/navigation";
-import { ROLE } from "@/lib/roles";
 
 export default async function RegisterPage({
   searchParams,
 }: {
   searchParams?: Promise<{ error?: string }>;
 }) {
-  const user = await getSessionUser();
-  if (user) {
-    redirect(user.role === ROLE.MEMBER ? "/account" : "/admin");
-  }
-
   const params = (await searchParams) ?? {};
-  const plans = await prisma.subscriptionPlan.findMany({
-    where: { isActive: true },
-    orderBy: { priceCents: "asc" },
-  });
+  let plans: Awaited<ReturnType<typeof prisma.subscriptionPlan.findMany>> = [];
+  let plansLoadFailed = false;
+
+  try {
+    plans = await prisma.subscriptionPlan.findMany({
+      where: { isActive: true },
+      orderBy: { priceCents: "asc" },
+    });
+  } catch {
+    plansLoadFailed = true;
+  }
 
   return (
     <main className="landing-shell">
@@ -40,10 +38,12 @@ export default async function RegisterPage({
                   : ""}
           </p>
         ) : null}
-        {plans.length === 0 ? (
+        {plansLoadFailed ? (
+          <p className="empty-state">Registracija trenutno ni na voljo, ker povezava z bazo ni uspela.</p>
+        ) : plans.length === 0 ? (
           <p className="empty-state">Registracija trenutno ni mozna, ker ni nastavljenega nobenega aktivnega paketa.</p>
         ) : (
-        <form className="admin-form" action={registerUser}>
+        <form className="admin-form" action="/auth/register" method="post">
           <label><span>Ime in priimek</span><input name="fullName" required /></label>
           <label><span>Email</span><input name="email" type="email" required /></label>
           <label className="form-span-2"><span>Geslo</span><input name="password" type="password" required /></label>
@@ -63,7 +63,7 @@ export default async function RegisterPage({
         )}
         <div className="landing-actions">
           <Link href="/login" className="ghost-link">Ze imam racun</Link>
-          <Link href="/admin" className="ghost-link">Admin prijava</Link>
+          <Link href="/" className="ghost-link">Nazaj na zacetek</Link>
         </div>
       </section>
     </main>

@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "clean": "powershell -NoProfile -Command \"if (Test-Path .next) { Remove-Item -LiteralPath .next -Recurse -Force }; if (Test-Path .next-dev) { Remove-Item -LiteralPath .next-dev -Recurse -Force }; if (Test-Path .next-dev-3002.log) { Remove-Item -LiteralPath .next-dev-3002.log -Force }; if (Test-Path .next-dev-3002.err.log) { Remove-Item -LiteralPath .next-dev-3002.err.log -Force }; if (Test-Path .next-start-3003.log) { Remove-Item -LiteralPath .next-start-3003.log -Force }; if (Test-Path .next-start-3003.err.log) { Remove-Item -LiteralPath .next-start-3003.err.log -Force }\"",
+    "dev": "npm run clean && next dev --turbopack",
+    "build": "npm run clean && next build",
     "start": "next start",
     "lint": "next lint",
     "db:generate": "prisma generate",

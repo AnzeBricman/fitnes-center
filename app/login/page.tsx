@@ -1,19 +1,10 @@
-import { loginUser } from "@/app/actions";
-import { getSessionUser } from "@/lib/auth";
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { ROLE } from "@/lib/roles";
 
 export default async function LoginPage({
   searchParams,
 }: {
   searchParams?: Promise<{ error?: string }>;
 }) {
-  const user = await getSessionUser();
-  if (user) {
-    redirect(user.role === ROLE.MEMBER ? "/account" : "/admin");
-  }
-
   const params = (await searchParams) ?? {};
   return (
     <main className="landing-shell">
@@ -31,14 +22,14 @@ export default async function LoginPage({
                 : ""}
           </p>
         ) : null}
-        <form className="admin-form" action={loginUser}>
+        <form className="admin-form" action="/auth/login" method="post">
           <label className="form-span-2"><span>Email</span><input name="email" type="email" required /></label>
           <label className="form-span-2"><span>Geslo</span><input name="password" type="password" required /></label>
           <button className="primary-button" type="submit">Prijava</button>
         </form>
         <div className="landing-actions">
           <Link href="/register" className="ghost-link">Registracija</Link>
-          <Link href="/admin" className="ghost-link">Admin prijava</Link>
+          <Link href="/" className="ghost-link">Nazaj na zacetek</Link>
         </div>
       </section>
     </main>
