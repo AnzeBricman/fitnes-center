@@ -5,10 +5,16 @@ export async function getDashboardData() {
   const now = new Date();
   const inSevenDays = new Date(now);
   inSevenDays.setDate(inSevenDays.getDate() + 7);
+  const thirtyDaysAgo = new Date(now);
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
   const startOfToday = new Date(now);
   startOfToday.setHours(0, 0, 0, 0);
   const endOfToday = new Date(now);
   endOfToday.setHours(23, 59, 59, 999);
+
+  const attendanceWindowStart = new Date(now);
+  attendanceWindowStart.setDate(attendanceWindowStart.getDate() - 6);
+  attendanceWindowStart.setHours(0, 0, 0, 0);
 
   const [
     memberCount,
@@ -22,6 +28,18 @@ export async function getDashboardData() {
     recentMembers,
     popularPlans,
     recentPayments,
+    activeMemberCount,
+    expiringMemberCount,
+    overdueMemberCount,
+    inactiveMemberCount,
+    pendingPaymentsCount,
+    paidPaymentsCount,
+    emailSentCount,
+    importJobCount,
+    documentCount,
+    apiExerciseCount,
+    attendanceWindow,
+    revenueWindow,
   ] = await Promise.all([
     prisma.member.count({ where: { status: { not: "INACTIVE" } } }),
     prisma.trainer.count(),
@@ -60,7 +78,62 @@ export async function getDashboardData() {
       orderBy: { createdAt: "desc" },
       take: 6,
     }),
+    prisma.member.count({ where: { status: "ACTIVE" } }),
+    prisma.member.count({ where: { status: "EXPIRING" } }),
+    prisma.member.count({ where: { status: "OVERDUE" } }),
+    prisma.member.count({ where: { status: "INACTIVE" } }),
+    prisma.payment.count({ where: { status: PaymentStatus.PENDING } }),
+    prisma.payment.count({ where: { status: PaymentStatus.PAID } }),
+    prisma.emailLog.count({ where: { status: EmailStatus.SENT } }),
+    prisma.importJob.count(),
+    prisma.document.count(),
+    prisma.exercise.count({ where: { source: "API" } }),
+    prisma.attendance.findMany({
+      where: { checkedInAt: { gte: attendanceWindowStart, lte: endOfToday } },
+      select: { checkedInAt: true },
+    }),
+    prisma.payment.findMany({
+      where: {
+        createdAt: { gte: thirtyDaysAgo },
+        status: PaymentStatus.PAID,
+      },
+      select: { createdAt: true, amountCents: true },
+    }),
   ]);
+
+  const attendanceByDayMap = new Map<string, number>();
+  for (let index = 0; index < 7; index += 1) {
+    const date = new Date(attendanceWindowStart);
+    date.setDate(attendanceWindowStart.getDate() + index);
+    attendanceByDayMap.set(date.toISOString().slice(0, 10), 0);
+  }
+
+  for (const attendance of attendanceWindow) {
+    const key = attendance.checkedInAt.toISOString().slice(0, 10);
+    attendanceByDayMap.set(key, (attendanceByDayMap.get(key) ?? 0) + 1);
+  }
+
+  const attendanceTrend = [...attendanceByDayMap.entries()].map(([date, count]) => ({
+    date,
+    count,
+  }));
+
+  const revenueByWeekMap = new Map<string, number>();
+  for (const payment of revenueWindow) {
+    const paymentDate = new Date(payment.createdAt);
+    const weekStart = new Date(paymentDate);
+    const day = weekStart.getDay();
+    const diff = (day + 6) % 7;
+    weekStart.setDate(weekStart.getDate() - diff);
+    weekStart.setHours(0, 0, 0, 0);
+    const key = weekStart.toISOString().slice(0, 10);
+    revenueByWeekMap.set(key, (revenueByWeekMap.get(key) ?? 0) + payment.amountCents);
+  }
+
+  const revenueTrend = [...revenueByWeekMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-5)
+    .map(([week, amountCents]) => ({ week, amountCents }));
 
   return {
     stats: [
@@ -76,6 +149,24 @@ export async function getDashboardData() {
     recentMembers,
     popularPlans,
     recentPayments,
+    memberStatus: [
+      { label: "Aktivni", value: activeMemberCount, tone: "success" },
+      { label: "Potece kmalu", value: expiringMemberCount, tone: "warning" },
+      { label: "Placilo zamuja", value: overdueMemberCount, tone: "danger" },
+      { label: "Neaktivni", value: inactiveMemberCount, tone: "muted" },
+    ],
+    paymentStatus: [
+      { label: "Placano", value: paidPaymentsCount, tone: "success" },
+      { label: "V cakanju", value: pendingPaymentsCount, tone: "warning" },
+    ],
+    operations: [
+      { label: "Poslani emaili", value: emailSentCount, detail: "Komunikacija s strankami" },
+      { label: "Import jobi", value: importJobCount, detail: "CSV in Excel uvozi" },
+      { label: "PDF dokumenti", value: documentCount, detail: "Racuni in potrdila" },
+      { label: "API vaje", value: apiExerciseCount, detail: "Podatki iz zunanjega API" },
+    ],
+    attendanceTrend,
+    revenueTrend,
   };
 }
 
@@ -217,9 +308,11 @@ export async function getActiveSubscriptionsPageData(query?: { status?: string }
 }
 
 export async function getAnalyticsPageData() {
-  const [attendances, members] = await Promise.all([
+  const [attendances, members, subscriptions, payments] = await Promise.all([
     prisma.attendance.findMany({ include: { workout: true } }),
     prisma.member.findMany({ select: { createdAt: true } }),
+    prisma.subscription.findMany({ select: { status: true, endDate: true } }),
+    prisma.payment.findMany({ select: { provider: true, status: true, amountCents: true, createdAt: true } }),
   ]);
 
   const visitByHour = Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0 }));
@@ -237,7 +330,56 @@ export async function getAnalyticsPageData() {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, count]) => ({ date, count }));
 
-  return { visitByHour, memberGrowth, attendanceCount: attendances.length };
+  const subscriptionStatusMap = new Map<string, number>([
+    ["ACTIVE", 0],
+    ["EXPIRED", 0],
+    ["CANCELLED", 0],
+    ["PENDING", 0],
+  ]);
+
+  for (const subscription of subscriptions) {
+    subscriptionStatusMap.set(subscription.status, (subscriptionStatusMap.get(subscription.status) ?? 0) + 1);
+  }
+
+  const subscriptionStatus = [...subscriptionStatusMap.entries()].map(([status, count]) => ({
+    status,
+    count,
+  }));
+
+  const providerMap = new Map<string, { count: number; amountCents: number }>();
+  for (const payment of payments) {
+    const current = providerMap.get(payment.provider) ?? { count: 0, amountCents: 0 };
+    providerMap.set(payment.provider, {
+      count: current.count + 1,
+      amountCents: current.amountCents + payment.amountCents,
+    });
+  }
+
+  const paymentProviders = [...providerMap.entries()].map(([provider, value]) => ({
+    provider,
+    ...value,
+  }));
+
+  const monthlyRevenueMap = new Map<string, number>();
+  for (const payment of payments) {
+    if (payment.status !== PaymentStatus.PAID) continue;
+    const month = payment.createdAt.toISOString().slice(0, 7);
+    monthlyRevenueMap.set(month, (monthlyRevenueMap.get(month) ?? 0) + payment.amountCents);
+  }
+
+  const revenueByMonth = [...monthlyRevenueMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-6)
+    .map(([month, amountCents]) => ({ month, amountCents }));
+
+  return {
+    visitByHour,
+    memberGrowth,
+    attendanceCount: attendances.length,
+    subscriptionStatus,
+    paymentProviders,
+    revenueByMonth,
+  };
 }
 
 export async function getAttendancePageData(query?: { member?: string; workout?: string }) {
