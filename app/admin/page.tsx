@@ -1,7 +1,7 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 import { getAnalyticsPeriod, getPeriodLabel } from "@/lib/analytics-period";
 import { getDashboardData } from "@/lib/dashboard-data";
-import { formatCurrency, formatDate, formatDateTime, formatLabel } from "@/lib/utils";
+import { formatCurrency, formatDate, formatLabel } from "@/lib/utils";
 
 const periods = ["day", "week", "month", "year"] as const;
 
@@ -20,7 +20,6 @@ export default async function AdminPage({
   const selectedPeriod = getAnalyticsPeriod(params.period);
   const {
     stats,
-    upcomingWorkouts,
     recentMembers,
     popularPlans,
     recentPayments,
@@ -146,32 +145,7 @@ export default async function AdminPage({
       </section>
 
       <section className="dashboard-grid">
-        <article className="panel-card">
-          <div className="panel-card-header">
-            <div>
-              <span className="section-kicker">Urnik</span>
-              <h3>Prihodnji treningi</h3>
-            </div>
-          </div>
-          <div className="table-list">
-            {upcomingWorkouts.map((workout) => (
-              <div key={workout.id} className="table-row">
-                <div>
-                  <strong>{workout.title}</strong>
-                  <span>
-                    {workout.trainer.fullName} · {formatDateTime(workout.scheduledAt)}
-                  </span>
-                </div>
-                <div className="table-row-meta">
-                  <strong>{workout._count.attendances}/{workout.capacity}</strong>
-                  <span>{formatLabel(workout.level)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </article>
-
-        <article className="panel-card">
+        <article className="panel-card panel-card-wide">
           <div className="panel-card-header">
             <div>
               <span className="section-kicker">Clani</span>

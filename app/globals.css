@@ -502,6 +502,11 @@ textarea {
   margin-bottom: 0;
 }
 
+.members-filter-form,
+.subscriptions-filter-form {
+  grid-template-columns: 1.2fr repeat(4, minmax(0, 0.8fr)) auto;
+}
+
 .table-list,
 .stack-list,
 .plan-grid {
@@ -563,6 +568,10 @@ textarea {
   flex-wrap: wrap;
   gap: 10px;
   justify-content: flex-end;
+}
+
+.account-danger-form {
+  margin-top: 18px;
 }
 
 .detail-list {

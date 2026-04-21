@@ -782,6 +782,81 @@ export async function changeMyPlan(formData: FormData) {
   redirect("/account");
 }
 
+export async function cancelMySubscription() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get("fc_session")?.value;
+  if (!token) redirect("/login");
+
+  const session = await prisma.session.findUnique({
+    where: { token },
+    include: { user: { include: { member: true } } },
+  });
+
+  const member = session?.user.member;
+  const memberId = session?.user.memberId;
+  if (!member || !memberId) redirect("/login");
+
+  const activeSubscription = await prisma.subscription.findFirst({
+    where: { memberId, active: true },
+    include: { plan: true },
+    orderBy: { endDate: "desc" },
+  });
+
+  if (!activeSubscription) {
+    redirect("/account");
+  }
+
+  await prisma.subscription.update({
+    where: { id: activeSubscription.id },
+    data: {
+      active: false,
+      status: SubscriptionStatus.CANCELLED,
+    },
+  });
+
+  await prisma.member.update({
+    where: { id: memberId },
+    data: { status: MemberStatus.INACTIVE },
+  });
+
+  const settings = await prisma.settings.findUnique({ where: { id: "default" } });
+  const adminRecipient = settings?.email || process.env.SMTP_FROM || "admin@fitnes-center.si";
+  const adminSubject = `Odjava narocnine: ${member.fullName}`;
+  const adminBody = `Clan ${member.fullName} (${member.email}) je oddal zahtevo za odjavo od paketa ${activeSubscription.plan.name}.`;
+
+  let emailStatus: EmailStatus = EmailStatus.DRAFT;
+  let provider = "system";
+
+  try {
+    const info = await sendEmailMessage({
+      to: adminRecipient,
+      subject: adminSubject,
+      html: `<p>${adminBody}</p>`,
+    });
+    emailStatus = EmailStatus.SENT;
+    provider = info.provider;
+  } catch {
+    emailStatus = EmailStatus.FAILED;
+  }
+
+  await prisma.emailLog.create({
+    data: {
+      memberId,
+      recipient: adminRecipient,
+      subject: adminSubject,
+      templateName: "subscription-cancelled",
+      body: adminBody,
+      status: emailStatus,
+      provider,
+      sentAt: emailStatus === EmailStatus.SENT ? new Date() : null,
+    },
+  });
+
+  revalidateAdmin();
+  revalidatePath("/account");
+  redirect("/account?subscription=cancelled");
+}
+
 export async function importMembers(formData: FormData) {
   const file = formData.get("file");
   if (!(file instanceof File)) {

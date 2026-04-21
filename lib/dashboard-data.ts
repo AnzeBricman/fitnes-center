@@ -1,4 +1,4 @@
-import { EmailStatus, PaymentStatus, type Prisma, SubscriptionStatus } from "@prisma/client";
+import { EmailStatus, PaymentProvider, PaymentStatus, type Prisma, SubscriptionStatus } from "@prisma/client";
 import { getAnalyticsPeriod, getRangeStart, type AnalyticsPeriod } from "@/lib/analytics-period";
 import { prisma } from "@/lib/prisma";
 
@@ -249,7 +249,12 @@ export async function getDashboardData(input?: { period?: string }) {
   };
 }
 
-export async function getMembersPageData(query?: { search?: string; status?: string; sort?: string }) {
+export async function getMembersPageData(query?: {
+  search?: string;
+  status?: string;
+  sort?: string;
+  planId?: string;
+}) {
   const where = {
     ...(query?.search
       ? {
@@ -260,6 +265,16 @@ export async function getMembersPageData(query?: { search?: string; status?: str
         }
       : {}),
     ...(query?.status ? { status: query.status as never } : {}),
+    ...(query?.planId
+      ? {
+          subscriptions: {
+            some: {
+              planId: query.planId,
+              active: true,
+            },
+          },
+        }
+      : {}),
   };
 
   const orderBy =
@@ -267,6 +282,8 @@ export async function getMembersPageData(query?: { search?: string; status?: str
       ? { fullName: "asc" as const }
       : query?.sort === "status"
         ? { status: "asc" as const }
+        : query?.sort === "joined"
+          ? { joinedAt: "desc" as const }
         : { createdAt: "desc" as const };
 
   const [members, plans] = await Promise.all([
@@ -316,14 +333,53 @@ export async function getWorkoutsPageData() {
   return { workouts, trainers, members };
 }
 
-export async function getSubscriptionsPageData(query?: { sort?: string; status?: string }) {
+export async function getSubscriptionsPageData(query?: {
+  sort?: string;
+  status?: string;
+  search?: string;
+  paymentStatus?: string;
+  provider?: string;
+}) {
   const now = new Date();
   const sortOrder =
     query?.sort === "price"
       ? { plan: { priceCents: "desc" as const } }
       : query?.sort === "member"
         ? { member: { fullName: "asc" as const } }
+        : query?.sort === "payment"
+          ? { payments: { _count: "desc" as const } }
         : { endDate: "asc" as const };
+
+  const where: Prisma.SubscriptionWhereInput = {
+    ...(query?.status === "expiring"
+      ? { endDate: { lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) } }
+      : query?.status === "cancelled"
+        ? { status: SubscriptionStatus.CANCELLED }
+        : query?.status === "expired"
+          ? { status: SubscriptionStatus.EXPIRED }
+          : query?.status === "pending"
+            ? { status: SubscriptionStatus.PENDING }
+            : {}),
+    ...(query?.search
+      ? {
+          OR: [
+            { member: { fullName: { contains: query.search, mode: "insensitive" } } },
+            { member: { email: { contains: query.search, mode: "insensitive" } } },
+            { plan: { name: { contains: query.search, mode: "insensitive" } } },
+          ],
+        }
+      : {}),
+    ...((query?.paymentStatus || query?.provider)
+      ? {
+          payments: {
+            some: {
+              ...(query?.paymentStatus ? { status: query.paymentStatus as PaymentStatus } : {}),
+              ...(query?.provider ? { provider: query.provider as PaymentProvider } : {}),
+            },
+          },
+        }
+      : {}),
+  };
 
   const [plans, members, subscriptions, payments] = await Promise.all([
     prisma.subscriptionPlan.findMany({
@@ -337,17 +393,26 @@ export async function getSubscriptionsPageData(query?: { sort?: string; status?:
       orderBy: { fullName: "asc" },
     }),
     prisma.subscription.findMany({
-      where:
-        query?.status === "expiring"
-          ? { endDate: { lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) } }
-          : undefined,
+      where,
       include: { member: true, plan: true, payments: { orderBy: { createdAt: "desc" }, take: 1 } },
       orderBy: sortOrder,
     }),
     prisma.payment.findMany({
       include: { member: true, subscription: { include: { plan: true } } },
+      where: {
+        ...(query?.search
+          ? {
+              OR: [
+                { member: { fullName: { contains: query.search, mode: "insensitive" } } },
+                { description: { contains: query.search, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+        ...(query?.paymentStatus ? { status: query.paymentStatus as PaymentStatus } : {}),
+        ...(query?.provider ? { provider: query.provider as PaymentProvider } : {}),
+      },
       orderBy: { createdAt: "desc" },
-      take: 12,
+      take: 24,
     }),
   ]);
 
