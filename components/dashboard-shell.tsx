@@ -32,12 +32,6 @@ export async function DashboardShell({
           <p>Uporabna osnova za clane, trenerje, narocnine, prisotnost in urnike.</p>
         </div>
 
-        <div className="sidebar-summary">
-          <span className="section-kicker">Sistem</span>
-          <h3>Administracija v enem pogledu</h3>
-          <p>Dodaj clane, pripravi pakete, vodi urnik in spremljaj poteke narocnin.</p>
-        </div>
-
         <SidebarNav />
       </aside>
 

@@ -1,20 +1,129 @@
 import { EmailStatus, PaymentStatus, type Prisma, SubscriptionStatus } from "@prisma/client";
+import { getAnalyticsPeriod, getRangeStart, type AnalyticsPeriod } from "@/lib/analytics-period";
 import { prisma } from "@/lib/prisma";
 
-export async function getDashboardData() {
+function startOfDay(date: Date) {
+  const value = new Date(date);
+  value.setHours(0, 0, 0, 0);
+  return value;
+}
+
+function formatMonthKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function buildAttendanceTrend(
+  attendances: Array<{ checkedInAt: Date }>,
+  period: AnalyticsPeriod,
+  rangeStart: Date,
+  now: Date,
+) {
+  if (period === "day") {
+    const map = new Map<string, number>();
+    for (let hour = 0; hour < 24; hour += 1) {
+      map.set(`${String(hour).padStart(2, "0")}:00`, 0);
+    }
+
+    for (const attendance of attendances) {
+      const key = `${String(attendance.checkedInAt.getHours()).padStart(2, "0")}:00`;
+      map.set(key, (map.get(key) ?? 0) + 1);
+    }
+
+    return [...map.entries()].map(([date, count]) => ({ date, count }));
+  }
+
+  if (period === "year") {
+    const map = new Map<string, number>();
+    const seed = new Date(rangeStart);
+    for (let index = 0; index < 12; index += 1) {
+      map.set(formatMonthKey(seed), 0);
+      seed.setMonth(seed.getMonth() + 1, 1);
+    }
+
+    for (const attendance of attendances) {
+      const key = formatMonthKey(attendance.checkedInAt);
+      map.set(key, (map.get(key) ?? 0) + 1);
+    }
+
+    return [...map.entries()].map(([date, count]) => ({ date, count }));
+  }
+
+  const totalDays = period === "week" ? 7 : 30;
+  const map = new Map<string, number>();
+  for (let index = 0; index < totalDays; index += 1) {
+    const date = new Date(rangeStart);
+    date.setDate(rangeStart.getDate() + index);
+    map.set(date.toISOString().slice(0, 10), 0);
+  }
+
+  for (const attendance of attendances) {
+    const key = attendance.checkedInAt.toISOString().slice(0, 10);
+    map.set(key, (map.get(key) ?? 0) + 1);
+  }
+
+  return [...map.entries()].map(([date, count]) => ({ date, count }));
+}
+
+function buildRevenueTrend(
+  payments: Array<{ createdAt: Date; amountCents: number }>,
+  period: AnalyticsPeriod,
+  rangeStart: Date,
+) {
+  if (period === "day") {
+    const map = new Map<string, number>();
+    for (let hour = 0; hour < 24; hour += 1) {
+      map.set(`${String(hour).padStart(2, "0")}:00`, 0);
+    }
+
+    for (const payment of payments) {
+      const key = `${String(payment.createdAt.getHours()).padStart(2, "0")}:00`;
+      map.set(key, (map.get(key) ?? 0) + payment.amountCents);
+    }
+
+    return [...map.entries()].map(([week, amountCents]) => ({ week, amountCents }));
+  }
+
+  if (period === "year") {
+    const map = new Map<string, number>();
+    const seed = new Date(rangeStart);
+    for (let index = 0; index < 12; index += 1) {
+      map.set(formatMonthKey(seed), 0);
+      seed.setMonth(seed.getMonth() + 1, 1);
+    }
+
+    for (const payment of payments) {
+      const key = formatMonthKey(payment.createdAt);
+      map.set(key, (map.get(key) ?? 0) + payment.amountCents);
+    }
+
+    return [...map.entries()].map(([week, amountCents]) => ({ week, amountCents }));
+  }
+
+  const map = new Map<string, number>();
+  const totalDays = period === "week" ? 7 : 30;
+  for (let index = 0; index < totalDays; index += 1) {
+    const date = new Date(rangeStart);
+    date.setDate(rangeStart.getDate() + index);
+    map.set(date.toISOString().slice(0, 10), 0);
+  }
+
+  for (const payment of payments) {
+    const key = payment.createdAt.toISOString().slice(0, 10);
+    map.set(key, (map.get(key) ?? 0) + payment.amountCents);
+  }
+
+  return [...map.entries()].map(([week, amountCents]) => ({ week, amountCents }));
+}
+
+export async function getDashboardData(input?: { period?: string }) {
+  const period = getAnalyticsPeriod(input?.period);
   const now = new Date();
+  const rangeStart = getRangeStart(period, now);
   const inSevenDays = new Date(now);
   inSevenDays.setDate(inSevenDays.getDate() + 7);
-  const thirtyDaysAgo = new Date(now);
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
-  const startOfToday = new Date(now);
-  startOfToday.setHours(0, 0, 0, 0);
+  const startOfToday = startOfDay(now);
   const endOfToday = new Date(now);
   endOfToday.setHours(23, 59, 59, 999);
-
-  const attendanceWindowStart = new Date(now);
-  attendanceWindowStart.setDate(attendanceWindowStart.getDate() - 6);
-  attendanceWindowStart.setHours(0, 0, 0, 0);
 
   const [
     memberCount,
@@ -89,53 +198,23 @@ export async function getDashboardData() {
     prisma.document.count(),
     prisma.exercise.count({ where: { source: "API" } }),
     prisma.attendance.findMany({
-      where: { checkedInAt: { gte: attendanceWindowStart, lte: endOfToday } },
+      where: { checkedInAt: { gte: rangeStart, lte: endOfToday } },
       select: { checkedInAt: true },
     }),
     prisma.payment.findMany({
       where: {
-        createdAt: { gte: thirtyDaysAgo },
+        createdAt: { gte: rangeStart },
         status: PaymentStatus.PAID,
       },
       select: { createdAt: true, amountCents: true },
     }),
   ]);
 
-  const attendanceByDayMap = new Map<string, number>();
-  for (let index = 0; index < 7; index += 1) {
-    const date = new Date(attendanceWindowStart);
-    date.setDate(attendanceWindowStart.getDate() + index);
-    attendanceByDayMap.set(date.toISOString().slice(0, 10), 0);
-  }
-
-  for (const attendance of attendanceWindow) {
-    const key = attendance.checkedInAt.toISOString().slice(0, 10);
-    attendanceByDayMap.set(key, (attendanceByDayMap.get(key) ?? 0) + 1);
-  }
-
-  const attendanceTrend = [...attendanceByDayMap.entries()].map(([date, count]) => ({
-    date,
-    count,
-  }));
-
-  const revenueByWeekMap = new Map<string, number>();
-  for (const payment of revenueWindow) {
-    const paymentDate = new Date(payment.createdAt);
-    const weekStart = new Date(paymentDate);
-    const day = weekStart.getDay();
-    const diff = (day + 6) % 7;
-    weekStart.setDate(weekStart.getDate() - diff);
-    weekStart.setHours(0, 0, 0, 0);
-    const key = weekStart.toISOString().slice(0, 10);
-    revenueByWeekMap.set(key, (revenueByWeekMap.get(key) ?? 0) + payment.amountCents);
-  }
-
-  const revenueTrend = [...revenueByWeekMap.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-5)
-    .map(([week, amountCents]) => ({ week, amountCents }));
+  const attendanceTrend = buildAttendanceTrend(attendanceWindow, period, rangeStart, now);
+  const revenueTrend = buildRevenueTrend(revenueWindow, period, rangeStart);
 
   return {
+    period,
     stats: [
       { label: "Aktivni clani", value: memberCount.toString(), detail: "Skupno registriranih v sistemu" },
       { label: "Aktivne narocnine", value: activeSubscriptions.toString(), detail: "Veljavne danes" },
@@ -307,12 +386,25 @@ export async function getActiveSubscriptionsPageData(query?: { status?: string }
   };
 }
 
-export async function getAnalyticsPageData() {
+export async function getAnalyticsPageData(input?: { period?: string }) {
+  const period = getAnalyticsPeriod(input?.period);
+  const now = new Date();
+  const rangeStart = getRangeStart(period, now);
+
   const [attendances, members, subscriptions, payments] = await Promise.all([
-    prisma.attendance.findMany({ include: { workout: true } }),
-    prisma.member.findMany({ select: { createdAt: true } }),
+    prisma.attendance.findMany({
+      where: { checkedInAt: { gte: rangeStart, lte: now } },
+      include: { workout: true },
+    }),
+    prisma.member.findMany({
+      where: { createdAt: { gte: rangeStart, lte: now } },
+      select: { createdAt: true },
+    }),
     prisma.subscription.findMany({ select: { status: true, endDate: true } }),
-    prisma.payment.findMany({ select: { provider: true, status: true, amountCents: true, createdAt: true } }),
+    prisma.payment.findMany({
+      where: { createdAt: { gte: rangeStart, lte: now } },
+      select: { provider: true, status: true, amountCents: true, createdAt: true },
+    }),
   ]);
 
   const visitByHour = Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0 }));
@@ -322,13 +414,34 @@ export async function getAnalyticsPageData() {
 
   const memberGrowthMap = new Map<string, number>();
   for (const member of members) {
-    const key = member.createdAt.toISOString().slice(0, 10);
+    const key =
+      period === "year"
+        ? formatMonthKey(member.createdAt)
+        : member.createdAt.toISOString().slice(0, 10);
     memberGrowthMap.set(key, (memberGrowthMap.get(key) ?? 0) + 1);
   }
 
-  const memberGrowth = [...memberGrowthMap.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, count]) => ({ date, count }));
+  const memberGrowthSeed = new Map<string, number>();
+  if (period === "year") {
+    const seed = new Date(rangeStart);
+    for (let index = 0; index < 12; index += 1) {
+      memberGrowthSeed.set(formatMonthKey(seed), 0);
+      seed.setMonth(seed.getMonth() + 1, 1);
+    }
+  } else {
+    const totalDays = period === "day" ? 1 : period === "week" ? 7 : 30;
+    for (let index = 0; index < totalDays; index += 1) {
+      const date = new Date(rangeStart);
+      date.setDate(rangeStart.getDate() + index);
+      memberGrowthSeed.set(date.toISOString().slice(0, 10), 0);
+    }
+  }
+
+  for (const [key, count] of memberGrowthMap.entries()) {
+    memberGrowthSeed.set(key, count);
+  }
+
+  const memberGrowth = [...memberGrowthSeed.entries()].map(([date, count]) => ({ date, count }));
 
   const subscriptionStatusMap = new Map<string, number>([
     ["ACTIVE", 0],
@@ -363,16 +476,37 @@ export async function getAnalyticsPageData() {
   const monthlyRevenueMap = new Map<string, number>();
   for (const payment of payments) {
     if (payment.status !== PaymentStatus.PAID) continue;
-    const month = payment.createdAt.toISOString().slice(0, 7);
+    const month =
+      period === "year"
+        ? formatMonthKey(payment.createdAt)
+        : payment.createdAt.toISOString().slice(0, 10);
     monthlyRevenueMap.set(month, (monthlyRevenueMap.get(month) ?? 0) + payment.amountCents);
   }
 
-  const revenueByMonth = [...monthlyRevenueMap.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-6)
-    .map(([month, amountCents]) => ({ month, amountCents }));
+  const revenueSeed = new Map<string, number>();
+  if (period === "year") {
+    const seed = new Date(rangeStart);
+    for (let index = 0; index < 12; index += 1) {
+      revenueSeed.set(formatMonthKey(seed), 0);
+      seed.setMonth(seed.getMonth() + 1, 1);
+    }
+  } else {
+    const totalDays = period === "day" ? 1 : period === "week" ? 7 : 30;
+    for (let index = 0; index < totalDays; index += 1) {
+      const date = new Date(rangeStart);
+      date.setDate(rangeStart.getDate() + index);
+      revenueSeed.set(date.toISOString().slice(0, 10), 0);
+    }
+  }
+
+  for (const [key, amountCents] of monthlyRevenueMap.entries()) {
+    revenueSeed.set(key, amountCents);
+  }
+
+  const revenueByMonth = [...revenueSeed.entries()].map(([month, amountCents]) => ({ month, amountCents }));
 
   return {
+    period,
     visitByHour,
     memberGrowth,
     attendanceCount: attendances.length,

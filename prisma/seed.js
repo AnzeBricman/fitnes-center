@@ -113,7 +113,7 @@ async function main() {
   for (let index = 0; index < memberSeed.length; index += 1) {
     const fullName = memberSeed[index];
     const slug = fullName.toLowerCase().replace(/\s+/g, ".");
-    const createdAt = new Date(2026, 2, 1 + index);
+    const createdAt = new Date(2025, 7 + (index % 7), 3 + (index % 20));
     const status =
       index % 7 === 0 ? MemberStatus.EXPIRING : index % 9 === 0 ? MemberStatus.OVERDUE : MemberStatus.ACTIVE;
 
@@ -124,6 +124,8 @@ async function main() {
         phone: `+38641${(200000 + index).toString().slice(-6)}`,
         notes: index % 3 === 0 ? "Zeli kombinacijo utezi in skupinskih treningov." : null,
         status,
+        joinedAt: createdAt,
+        createdAt,
       },
       create: {
         fullName,
@@ -245,6 +247,51 @@ async function main() {
         },
       });
     }
+  }
+
+  const attendanceCount = await prisma.attendance.count();
+  if (attendanceCount < 220) {
+    const extraAttendances = [];
+    for (let index = 0; index < 240; index += 1) {
+      const member = members[index % members.length];
+      const checkedInAt = new Date(2025, 9 + (index % 7), 1 + (index % 27), 6 + (index % 12), 15, 0);
+      extraAttendances.push({
+        memberId: member.id,
+        checkedInAt,
+        method: index % 4 === 0 ? AttendanceMethod.PORTAL : AttendanceMethod.MANUAL,
+      });
+    }
+
+    await prisma.attendance.createMany({
+      data: extraAttendances,
+      skipDuplicates: true,
+    });
+  }
+
+  const paymentCount = await prisma.payment.count();
+  if (paymentCount < 90) {
+    const extraPayments = [];
+    for (let index = 0; index < 120; index += 1) {
+      const member = members[index % members.length];
+      const plan = plans[index % plans.length];
+      const createdAt = new Date(2025, 6 + (index % 9), 2 + (index % 24), 10, 30, 0);
+      const isPending = index % 8 === 0;
+
+      extraPayments.push({
+        memberId: member.id,
+        amountCents: plan.priceCents + (index % 3) * 500,
+        provider: index % 5 === 0 ? PaymentProvider.STRIPE : PaymentProvider.MANUAL,
+        status: isPending ? PaymentStatus.PENDING : PaymentStatus.PAID,
+        description: `Zgodovinsko placilo ${plan.name} #${index + 1}`,
+        paidAt: isPending ? null : createdAt,
+        createdAt,
+      });
+    }
+
+    await prisma.payment.createMany({
+      data: extraPayments,
+      skipDuplicates: false,
+    });
   }
 
   await Promise.all(

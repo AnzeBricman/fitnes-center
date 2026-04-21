@@ -9,20 +9,27 @@ export function SidebarNav() {
 
   return (
     <nav className="sidebar-nav" aria-label="Glavna navigacija">
-      {navigation.map((item) => {
-        const isActive = pathname === item.href;
+      {navigation.map((group) => (
+        <div key={group.title} className="nav-section">
+          <span className="nav-section-title">{group.title}</span>
+          <div className="nav-section-links">
+            {group.items.map((item) => {
+              const isActive = pathname === item.href;
 
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`nav-link${isActive ? " nav-link-active" : ""}`}
-          >
-            <span>{item.label}</span>
-            <small>{item.description}</small>
-          </Link>
-        );
-      })}
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`nav-link${isActive ? " nav-link-active" : ""}`}
+                >
+                  <span>{item.label}</span>
+                  <small>{item.description}</small>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </nav>
   );
 }

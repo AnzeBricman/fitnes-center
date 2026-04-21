@@ -13,19 +13,34 @@ export default async function ImportsPage() {
     >
       <section className="content-layout">
         <article className="panel-card form-card">
-          <div className="panel-card-header"><div><span className="section-kicker">CSV / Excel</span><h3>Uvozi clane</h3></div></div>
-          <form action={importMembers} className="admin-form" encType="multipart/form-data">
+          <div className="panel-card-header">
+            <div>
+              <span className="section-kicker">CSV / Excel</span>
+              <h3>Uvozi clane</h3>
+            </div>
+          </div>
+
+          <form action={importMembers} className="admin-form">
             <label className="form-span-2">
               <span>Datoteka</span>
               <input type="file" name="file" accept=".csv,.xlsx,.xls" required />
             </label>
             <button className="primary-button" type="submit">Zacni uvoz</button>
           </form>
-          <p className="support-note">Podprta polja: `fullName`, `email`, `phone`, `notes` ali slovenska imena stolpcev.</p>
+
+          <p className="support-note">
+            Podprta polja: `fullName`, `email`, `phone`, `notes` ali slovenska imena stolpcev.
+          </p>
         </article>
 
         <article className="panel-card">
-          <div className="panel-card-header"><div><span className="section-kicker">Zgodovina</span><h3>Import jobi</h3></div></div>
+          <div className="panel-card-header">
+            <div>
+              <span className="section-kicker">Zgodovina</span>
+              <h3>Import jobi</h3>
+            </div>
+          </div>
+
           <div className="table-list">
             {jobs.map((job) => (
               <div key={job.id} className="table-row">

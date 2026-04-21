@@ -1,8 +1,23 @@
 import { DashboardShell } from "@/components/dashboard-shell";
+import { getAnalyticsPeriod, getPeriodLabel } from "@/lib/analytics-period";
 import { getDashboardData } from "@/lib/dashboard-data";
 import { formatCurrency, formatDate, formatDateTime, formatLabel } from "@/lib/utils";
 
-export default async function AdminPage() {
+const periods = ["day", "week", "month", "year"] as const;
+
+function formatTrendLabel(value: string) {
+  if (value.includes(":")) return value;
+  if (/^\d{4}-\d{2}$/.test(value)) return value;
+  return formatDate(value);
+}
+
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ period?: string }>;
+}) {
+  const params = (await searchParams) ?? {};
+  const selectedPeriod = getAnalyticsPeriod(params.period);
   const {
     stats,
     upcomingWorkouts,
@@ -14,7 +29,7 @@ export default async function AdminPage() {
     operations,
     attendanceTrend,
     revenueTrend,
-  } = await getDashboardData();
+  } = await getDashboardData({ period: selectedPeriod });
 
   const maxAttendance = Math.max(...attendanceTrend.map((item) => item.count), 1);
   const maxRevenue = Math.max(...revenueTrend.map((item) => item.amountCents), 1);
@@ -22,17 +37,40 @@ export default async function AdminPage() {
   return (
     <DashboardShell
       title="Command Center"
-      description="Pregled poslovanja, clanstva, komunikacije in avtomatizacije na enem mestu."
+      description="Pregled poslovanja, clanstva in prihodkov z uporabnimi podatki za izbrano obdobje."
     >
-      <section className="command-center">
+      <section className="panel-card dashboard-toolbar">
+        <div>
+          <span className="section-kicker">Pregled obdobja</span>
+          <h3>Filtriraj admin pogled po casu</h3>
+          <p className="support-copy">
+            Trenutno gledas podatke za obdobje: <strong>{getPeriodLabel(selectedPeriod)}</strong>.
+          </p>
+        </div>
+
+        <form method="get" className="period-filter">
+          {periods.map((period) => (
+            <button
+              key={period}
+              type="submit"
+              name="period"
+              value={period}
+              className={`period-chip${selectedPeriod === period ? " period-chip-active" : ""}`}
+            >
+              {getPeriodLabel(period)}
+            </button>
+          ))}
+        </form>
+      </section>
+
+      <section className="command-center command-center-single">
         <article className="command-center-hero">
           <div>
             <span className="section-kicker">Gym OS</span>
             <h3>Operativni pregled fitnes centra v realnem casu.</h3>
             <p>
-              Admin panel zdaj deluje kot dejanska delovna konzola: spremljanje
-              clanstva, placil, prisotnosti, email kampanj, uvozov in dokumentov
-              brez skakanja med razlicnimi orodji.
+              Admin panel zdaj daje poudarek dejanskim stevilkam: clanstvo,
+              prihodki, prisotnost, placila in paketi v obdobju, ki ga izberes.
             </p>
           </div>
 
@@ -43,24 +81,6 @@ export default async function AdminPage() {
                 <strong>{item.value}</strong>
               </article>
             ))}
-          </div>
-        </article>
-
-        <article className="command-center-side">
-          <span className="section-kicker">Admin fokus</span>
-          <div className="insight-stack">
-            <div>
-              <strong>Filtriranje in sortiranje</strong>
-              <p>Clani, placila, prisotnost in narocnine so pripravljeni za hiter pregled.</p>
-            </div>
-            <div>
-              <strong>CSV / Excel uvoz</strong>
-              <p>Masovni uvoz podatkov v bazo ostaja dostopen neposredno iz admin panela.</p>
-            </div>
-            <div>
-              <strong>Email + PDF + API</strong>
-              <p>Komunikacija, dokumenti in zunanji podatki so povezani v isti tok dela.</p>
-            </div>
           </div>
         </article>
       </section>
@@ -76,42 +96,41 @@ export default async function AdminPage() {
       </section>
 
       <section className="dashboard-grid">
-        <article className="panel-card">
+        <article className="panel-card chart-surface-card">
           <div className="panel-card-header">
             <div>
               <span className="section-kicker">Prisotnost</span>
-              <h3>Trend zadnjih 7 dni</h3>
+              <h3>Trend za izbrano obdobje</h3>
             </div>
           </div>
-          <div className="spark-grid">
+          <div className="spark-grid spark-grid-wide">
             {attendanceTrend.map((item) => (
-              <div key={item.date} className="spark-column">
-                <div className="spark-bar">
+              <div key={item.date} className="spark-column spark-column-modern">
+                <div className="spark-bar spark-bar-soft">
                   <i style={{ height: `${(item.count / maxAttendance) * 100}%` }} />
                 </div>
                 <strong>{item.count}</strong>
-                <span>{formatDate(item.date)}</span>
+                <span>{formatTrendLabel(item.date)}</span>
               </div>
             ))}
           </div>
-          <p className="support-note">Podatek sluzi za hitro zaznavanje padca obiska in planiranje urnika.</p>
         </article>
 
-        <article className="panel-card">
+        <article className="panel-card chart-surface-card">
           <div className="panel-card-header">
             <div>
               <span className="section-kicker">Prihodki</span>
-              <h3>Tedenski denarni tok</h3>
+              <h3>Denarni tok po obdobju</h3>
             </div>
           </div>
-          <div className="spark-grid">
+          <div className="spark-grid spark-grid-wide">
             {revenueTrend.map((item) => (
-              <div key={item.week} className="spark-column">
-                <div className="spark-bar spark-bar-revenue">
+              <div key={item.week} className="spark-column spark-column-modern">
+                <div className="spark-bar spark-bar-revenue spark-bar-soft">
                   <i style={{ height: `${(item.amountCents / maxRevenue) * 100}%` }} />
                 </div>
                 <strong>{formatCurrency(item.amountCents)}</strong>
-                <span>{formatDate(item.week)}</span>
+                <span>{formatTrendLabel(item.week)}</span>
               </div>
             ))}
           </div>
@@ -200,7 +219,7 @@ export default async function AdminPage() {
           <div className="panel-card-header">
             <div>
               <span className="section-kicker">Operacije</span>
-              <h3>Automatizacija in zaledje</h3>
+              <h3>Sistem v uporabi</h3>
             </div>
           </div>
           <div className="status-card-grid">
@@ -216,7 +235,7 @@ export default async function AdminPage() {
       </section>
 
       <section className="dashboard-grid">
-        <article className="panel-card">
+        <article className="panel-card panel-card-wide">
           <div className="panel-card-header">
             <div>
               <span className="section-kicker">Placila</span>
@@ -236,41 +255,6 @@ export default async function AdminPage() {
                 </div>
               </div>
             ))}
-          </div>
-        </article>
-
-        <article className="panel-card">
-          <div className="panel-card-header">
-            <div>
-              <span className="section-kicker">Kaj panel podpira</span>
-              <h3>Funkcionalnosti za dejansko uporabo</h3>
-            </div>
-          </div>
-          <div className="capability-grid">
-            <article className="capability-card">
-              <strong>Filtriranje in sortiranje</strong>
-              <p>Hitro razvrscanje clanov, placil, prisotnosti in aktivnih paketov.</p>
-            </article>
-            <article className="capability-card">
-              <strong>CSV / Excel uvoz</strong>
-              <p>Masovni uvoz v bazo za clane, pakete ali operativne sezname.</p>
-            </article>
-            <article className="capability-card">
-              <strong>Email iz admina</strong>
-              <p>Obvestila strankam, opomniki in kampanje neposredno iz sistema.</p>
-            </article>
-            <article className="capability-card">
-              <strong>Avtomatski emaili</strong>
-              <p>Dogodki, kot so nakupi, poteki ali potrditve, lahko sprozijo komunikacijo.</p>
-            </article>
-            <article className="capability-card">
-              <strong>PDF izvoz</strong>
-              <p>Racuni, potrdila in porocila ostanejo centralno zbrani in pripravljeni za izvoz.</p>
-            </article>
-            <article className="capability-card">
-              <strong>Zunanji API podatki</strong>
-              <p>Katalog vaj je obogaten z zunanjimi podatki za bolj bogato uporabnisko izkusnjo.</p>
-            </article>
           </div>
         </article>
       </section>

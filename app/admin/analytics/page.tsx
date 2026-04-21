@@ -1,8 +1,22 @@
 import { DashboardShell } from "@/components/dashboard-shell";
+import { getAnalyticsPeriod, getPeriodLabel } from "@/lib/analytics-period";
 import { getAnalyticsPageData } from "@/lib/dashboard-data";
 import { formatCurrency, formatDate, formatLabel } from "@/lib/utils";
 
-export default async function AnalyticsPage() {
+const periods = ["day", "week", "month", "year"] as const;
+
+function formatTrendLabel(value: string) {
+  if (/^\d{4}-\d{2}$/.test(value)) return value;
+  return formatDate(value);
+}
+
+export default async function AnalyticsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ period?: string }>;
+}) {
+  const params = (await searchParams) ?? {};
+  const selectedPeriod = getAnalyticsPeriod(params.period);
   const {
     visitByHour,
     memberGrowth,
@@ -10,7 +24,7 @@ export default async function AnalyticsPage() {
     subscriptionStatus,
     paymentProviders,
     revenueByMonth,
-  } = await getAnalyticsPageData();
+  } = await getAnalyticsPageData({ period: selectedPeriod });
 
   const maxVisit = Math.max(...visitByHour.map((item) => item.count), 1);
   const maxGrowth = Math.max(...memberGrowth.map((item) => item.count), 1);
@@ -23,36 +37,32 @@ export default async function AnalyticsPage() {
       title="Analitika"
       description="Vizualizacija obiska, rasti, placilnih kanalov in prihodkov za hitre poslovne odlocitve."
     >
-      <section className="command-center">
-        <article className="command-center-hero analytics-hero">
-          <div>
-            <span className="section-kicker">Business intelligence</span>
-            <h3>Podatki so pregledni, primerljivi in pripravljeni za odlocanje.</h3>
-            <p>
-              Ta pogled zdruzuje obisk po urah, rast baze clanov, prihodke po
-              mesecih in razmerje med statusi narocnin ter placilnimi kanali.
-            </p>
-          </div>
+      <section className="panel-card dashboard-toolbar">
+        <div>
+          <span className="section-kicker">Analitika</span>
+          <h3>Primerjaj podatke po obdobjih</h3>
+          <p className="support-copy">
+            Aktivni filter: <strong>{getPeriodLabel(selectedPeriod)}</strong>
+          </p>
+        </div>
 
-          <div className="command-pill-row">
-            <article className="status-pill status-pill-success">
-              <span>Skupna prisotnost</span>
-              <strong>{attendanceCount}</strong>
-            </article>
-            <article className="status-pill status-pill-warning">
-              <span>Placilni kanali</span>
-              <strong>{paymentProviders.length}</strong>
-            </article>
-            <article className="status-pill status-pill-muted">
-              <span>Statusi narocnin</span>
-              <strong>{subscriptionStatus.length}</strong>
-            </article>
-          </div>
-        </article>
+        <form method="get" className="period-filter">
+          {periods.map((period) => (
+            <button
+              key={period}
+              type="submit"
+              name="period"
+              value={period}
+              className={`period-chip${selectedPeriod === period ? " period-chip-active" : ""}`}
+            >
+              {getPeriodLabel(period)}
+            </button>
+          ))}
+        </form>
       </section>
 
       <section className="dashboard-grid">
-        <article className="panel-card">
+        <article className="panel-card chart-surface-card">
           <div className="panel-card-header">
             <div>
               <span className="section-kicker">Obisk</span>
@@ -61,9 +71,11 @@ export default async function AnalyticsPage() {
           </div>
           <div className="chart-list">
             {visitByHour.map((item) => (
-              <div key={item.hour} className="chart-row">
+              <div key={item.hour} className="chart-row chart-row-modern">
                 <span>{item.hour.toString().padStart(2, "0")}:00</span>
-                <div className="chart-bar"><i style={{ width: `${(item.count / maxVisit) * 100}%` }} /></div>
+                <div className="chart-bar chart-bar-modern">
+                  <i style={{ width: `${(item.count / maxVisit) * 100}%` }} />
+                </div>
                 <strong>{item.count}</strong>
               </div>
             ))}
@@ -71,18 +83,20 @@ export default async function AnalyticsPage() {
           <p className="support-note">Skupno zabelezenih prihodov: {attendanceCount}</p>
         </article>
 
-        <article className="panel-card">
+        <article className="panel-card chart-surface-card">
           <div className="panel-card-header">
             <div>
               <span className="section-kicker">Rast</span>
-              <h3>Stevilo novih clanov</h3>
+              <h3>Novi clani skozi cas</h3>
             </div>
           </div>
           <div className="chart-list">
-            {memberGrowth.slice(-8).map((item) => (
-              <div key={item.date} className="chart-row">
-                <span>{formatDate(item.date)}</span>
-                <div className="chart-bar"><i style={{ width: `${(item.count / maxGrowth) * 100}%` }} /></div>
+            {memberGrowth.map((item) => (
+              <div key={item.date} className="chart-row chart-row-modern">
+                <span>{formatTrendLabel(item.date)}</span>
+                <div className="chart-bar chart-bar-growth">
+                  <i style={{ width: `${(item.count / maxGrowth) * 100}%` }} />
+                </div>
                 <strong>{item.count}</strong>
               </div>
             ))}
@@ -117,7 +131,7 @@ export default async function AnalyticsPage() {
           <div className="panel-card-header">
             <div>
               <span className="section-kicker">Placila</span>
-              <h3>Placilni ponudniki</h3>
+              <h3>Ponudniki placil</h3>
             </div>
           </div>
           <div className="status-distribution">
@@ -138,21 +152,21 @@ export default async function AnalyticsPage() {
       </section>
 
       <section className="dashboard-grid">
-        <article className="panel-card panel-card-wide">
+        <article className="panel-card panel-card-wide chart-surface-card">
           <div className="panel-card-header">
             <div>
               <span className="section-kicker">Prihodki</span>
-              <h3>Mescni prihodki</h3>
+              <h3>Prihodki skozi izbrano obdobje</h3>
             </div>
           </div>
-          <div className="spark-grid">
+          <div className="spark-grid spark-grid-wide">
             {revenueByMonth.map((item) => (
-              <div key={item.month} className="spark-column">
-                <div className="spark-bar spark-bar-revenue">
+              <div key={item.month} className="spark-column spark-column-modern">
+                <div className="spark-bar spark-bar-revenue spark-bar-soft">
                   <i style={{ height: `${(item.amountCents / maxRevenue) * 100}%` }} />
                 </div>
                 <strong>{formatCurrency(item.amountCents)}</strong>
-                <span>{item.month}</span>
+                <span>{formatTrendLabel(item.month)}</span>
               </div>
             ))}
           </div>

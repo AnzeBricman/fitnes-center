@@ -1,16 +1,28 @@
 export const navigation = [
-  { href: "/admin", label: "Dashboard", description: "Pregled poslovanja" },
-  { href: "/admin/members", label: "Clani", description: "Baza clanov" },
-  { href: "/admin/trainers", label: "Trenerji", description: "Ekipa in specializacije" },
-  { href: "/admin/workouts", label: "Treningi", description: "Urnik in kapacitete" },
-  { href: "/admin/subscriptions", label: "Narocnine", description: "Paketi in placila" },
-  { href: "/admin/active-subscriptions", label: "Aktivne narocnine", description: "Pregled clanarine" },
-  { href: "/admin/attendance", label: "Prisotnost", description: "Evidenca obiskov" },
-  { href: "/admin/upcoming-payments", label: "Prihajajoca placila", description: "Poteki in opomniki" },
-  { href: "/admin/analytics", label: "Analitika", description: "Obisk in rast" },
-  { href: "/admin/imports", label: "Uvoz", description: "CSV in Excel" },
-  { href: "/admin/emails", label: "Email", description: "Obvestila in opomniki" },
-  { href: "/admin/documents", label: "PDF", description: "Potrdila in racuni" },
-  { href: "/admin/exercises", label: "Vaje", description: "Opis in slike iz API" },
-  { href: "/admin/settings", label: "Nastavitve", description: "Osnovni podatki sistema" },
-];
+  {
+    title: "Pregled",
+    items: [
+      { href: "/admin", label: "Dashboard", description: "Glavni pregled poslovanja" },
+      { href: "/admin/analytics", label: "Analitika", description: "Obisk, rast in prihodki" },
+    ],
+  },
+  {
+    title: "Operativa",
+    items: [
+      { href: "/admin/members", label: "Clani", description: "Baza clanov in statusi" },
+      { href: "/admin/trainers", label: "Trenerji", description: "Ekipa in specializacije" },
+      { href: "/admin/workouts", label: "Treningi", description: "Urnik in kapacitete" },
+      { href: "/admin/attendance", label: "Prisotnost", description: "Evidenca prihodov" },
+      { href: "/admin/subscriptions", label: "Narocnine", description: "Paketi in placila" },
+    ],
+  },
+  {
+    title: "Komunikacija",
+    items: [
+      { href: "/admin/imports", label: "Uvoz", description: "CSV in Excel datoteke" },
+      { href: "/admin/emails", label: "Email", description: "Obvestila in opomniki" },
+      { href: "/admin/documents", label: "PDF", description: "Potrdila in racuni" },
+      { href: "/admin/settings", label: "Nastavitve", description: "Osnovni podatki sistema" },
+    ],
+  },
+] as const;

@@ -1,14 +1,14 @@
-import { changeMyPlan, logoutUser } from "@/app/actions";
+import { logoutUser } from "@/app/actions";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import Link from "next/link";
 import { formatCurrency, formatDate, formatLabel } from "@/lib/utils";
 
 export default async function AccountPage() {
   const user = await requireUser();
   const memberId = user.memberId;
 
-  const [plans, subscriptions, member] = await Promise.all([
-    prisma.subscriptionPlan.findMany({ where: { isActive: true }, orderBy: { priceCents: "asc" } }),
+  const [subscriptions, member] = await Promise.all([
     memberId
       ? prisma.subscription.findMany({
           where: { memberId },
@@ -33,7 +33,14 @@ export default async function AccountPage() {
       </section>
 
       <section className="panel-card">
-        <div className="panel-card-header"><div><span className="section-kicker">Narocnina</span><h3>Trenutni paket</h3></div></div>
+        <div className="panel-card-header">
+          <div>
+            <span className="section-kicker">Narocnina</span>
+            <h3>Trenutni paket</h3>
+          </div>
+          <Link href="/account/change-plan" className="ghost-link">Spremeni narocnino</Link>
+        </div>
+
         {activeSubscription ? (
           <div className="detail-list">
             <div><span>Paket</span><strong>{activeSubscription.plan.name}</strong></div>
@@ -44,24 +51,6 @@ export default async function AccountPage() {
         ) : (
           <p className="empty-state">Narocnina se se ne vodi.</p>
         )}
-      </section>
-
-      <section className="panel-card form-card">
-        <div className="panel-card-header"><div><span className="section-kicker">Sprememba</span><h3>Zamenjaj paket</h3></div></div>
-        <form className="admin-form" action={changeMyPlan}>
-          <label className="form-span-2">
-            <span>Izberi nov paket</span>
-            <select name="planId" required defaultValue="">
-              <option value="" disabled>Izberi novo narocnino</option>
-              {plans.map((plan) => (
-                <option key={plan.id} value={plan.id}>
-                  {plan.name} - {formatCurrency(plan.priceCents)} / {plan.durationDays} dni
-                </option>
-              ))}
-            </select>
-          </label>
-          <button className="primary-button" type="submit">Spremeni paket</button>
-        </form>
       </section>
     </main>
   );
