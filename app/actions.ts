@@ -1,13 +1,11 @@
 "use server";
 
-import * as XLSX from "xlsx";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   DocumentType,
   EmailStatus,
   ExerciseSource,
-  ImportStatus,
   Gender,
   MemberStatus,
   AttendanceMethod,
@@ -68,7 +66,6 @@ function adminPaths() {
     "/admin/attendance",
     "/admin/active-subscriptions",
     "/admin/upcoming-payments",
-    "/admin/imports",
     "/admin/emails",
     "/admin/documents",
     "/admin/exercises",
@@ -855,77 +852,6 @@ export async function cancelMySubscription() {
   revalidateAdmin();
   revalidatePath("/account");
   redirect("/account?subscription=cancelled");
-}
-
-export async function importMembers(formData: FormData) {
-  const file = formData.get("file");
-  if (!(file instanceof File)) {
-    return;
-  }
-
-  const fileName = file.name || "import";
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const ext = fileName.split(".").pop()?.toLowerCase();
-  const isXlsx = ext === "xlsx" || ext === "xls";
-  const workbook = isXlsx
-    ? XLSX.read(buffer, { type: "buffer" })
-    : XLSX.read(buffer.toString("utf8"), { type: "string" });
-
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
-
-  const importJob = await prisma.importJob.create({
-    data: {
-      fileName,
-      format: isXlsx ? "XLSX" : "CSV",
-      status: ImportStatus.PENDING,
-      rowCount: rows.length,
-    },
-  });
-
-  try {
-    let created = 0;
-    for (const row of rows) {
-      const fullName = String(row.fullName || row.name || row["Ime"] || "").trim();
-      const email = String(row.email || row["Email"] || "").trim();
-      if (!fullName || !email) continue;
-
-      await prisma.member.upsert({
-        where: { email },
-        update: {
-          fullName,
-          phone: String(row.phone || row["Telefon"] || "").trim() || null,
-          notes: String(row.notes || row["Opombe"] || "").trim() || null,
-        },
-        create: {
-          fullName,
-          email,
-          phone: String(row.phone || row["Telefon"] || "").trim() || null,
-          notes: String(row.notes || row["Opombe"] || "").trim() || null,
-          status: MemberStatus.ACTIVE,
-        },
-      });
-      created += 1;
-    }
-
-    await prisma.importJob.update({
-      where: { id: importJob.id },
-      data: {
-        status: ImportStatus.COMPLETED,
-        note: `Uvozenih ali posodobljenih vrstic: ${created}.`,
-      },
-    });
-  } catch (error) {
-    await prisma.importJob.update({
-      where: { id: importJob.id },
-      data: {
-        status: ImportStatus.FAILED,
-        note: error instanceof Error ? error.message : "Import failed.",
-      },
-    });
-  }
-
-  revalidateAdmin();
 }
 
 export async function sendTemplateEmail(formData: FormData) {

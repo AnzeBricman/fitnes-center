@@ -5,6 +5,8 @@ import { getPlanFeatures, getPlanHighlight } from "@/lib/plans";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/utils";
 
+export const dynamic = "force-dynamic";
+
 export default async function ChangePlanPage() {
   const user = await requireUser();
   const memberId = user.memberId;

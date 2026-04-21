@@ -4,6 +4,8 @@ import { requireUser } from "@/lib/auth";
 import Link from "next/link";
 import { formatCurrency, formatDate, formatLabel } from "@/lib/utils";
 
+export const dynamic = "force-dynamic";
+
 export default async function AccountPage({
   searchParams,
 }: {

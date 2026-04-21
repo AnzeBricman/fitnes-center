@@ -74,7 +74,7 @@ export default async function HomePage() {
           <h3>Jedro sistema</h3>
           <p className="empty-state">
             Sistem pokriva clane, trenerje, treninge, narocnine, prisotnost, analitiko,
-            uvoz, email obvestila in dokumente.
+            email obvestila, dokumente in katalog vaj.
           </p>
           <p className="support-note">
             Ce baza trenutno ni dosegljiva, se prijava vseeno odpre, podatki na tej strani pa se prikazejo,

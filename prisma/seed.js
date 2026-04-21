@@ -310,18 +310,6 @@ async function main() {
     ),
   );
 
-  if ((await prisma.importJob.count()) === 0) {
-    await prisma.importJob.create({
-      data: {
-        fileName: "seed-members.xlsx",
-        format: "XLSX",
-        status: "COMPLETED",
-        rowCount: members.length,
-        note: "Zacetni demo podatki.",
-      },
-    });
-  }
-
   if (!(await prisma.settings.findUnique({ where: { id: "default" } }))) {
     await prisma.settings.create({
       data: {

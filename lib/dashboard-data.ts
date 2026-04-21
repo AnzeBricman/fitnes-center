@@ -144,7 +144,6 @@ export async function getDashboardData(input?: { period?: string }) {
     pendingPaymentsCount,
     paidPaymentsCount,
     emailSentCount,
-    importJobCount,
     documentCount,
     apiExerciseCount,
     attendanceWindow,
@@ -194,7 +193,6 @@ export async function getDashboardData(input?: { period?: string }) {
     prisma.payment.count({ where: { status: PaymentStatus.PENDING } }),
     prisma.payment.count({ where: { status: PaymentStatus.PAID } }),
     prisma.emailLog.count({ where: { status: EmailStatus.SENT } }),
-    prisma.importJob.count(),
     prisma.document.count(),
     prisma.exercise.count({ where: { source: "API" } }),
     prisma.attendance.findMany({
@@ -240,9 +238,9 @@ export async function getDashboardData(input?: { period?: string }) {
     ],
     operations: [
       { label: "Poslani emaili", value: emailSentCount, detail: "Komunikacija s strankami" },
-      { label: "Import jobi", value: importJobCount, detail: "CSV in Excel uvozi" },
       { label: "PDF dokumenti", value: documentCount, detail: "Racuni in potrdila" },
       { label: "API vaje", value: apiExerciseCount, detail: "Podatki iz zunanjega API" },
+      { label: "Prihajajoca placila", value: upcomingPayments, detail: "Clanom se bliza potek" },
     ],
     attendanceTrend,
     revenueTrend,
@@ -617,10 +615,6 @@ export async function getUpcomingPaymentsData() {
   });
 
   return subscriptions;
-}
-
-export async function getImportPageData() {
-  return prisma.importJob.findMany({ orderBy: { createdAt: "desc" }, take: 12 });
 }
 
 export async function getEmailPageData() {

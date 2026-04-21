@@ -9,7 +9,7 @@ Projekt bo zgrajen kot moderna spletna aplikacija z `Next.js App Router`, kjer b
 - admin upravljal clane, trenerje, treninge in narocnine
 - osebje spremljalo prisotnost in prihajajoce obveznosti
 - sistem pripravljal osnovne statistike obiska in rasti
-- aplikacija podpirala uvoz podatkov, email obvestila in PDF izvoz
+- aplikacija podpirala email obvestila, PDF izvoz in podatke iz zunanjih API-jev
 
 ## Plan funkcionalnosti
 
@@ -30,7 +30,6 @@ Projekt bo zgrajen kot moderna spletna aplikacija z `Next.js App Router`, kjer b
 - rast stevila clanov
 
 ### Dodatki
-- uvoz CSV ali Excel datotek
 - email opomniki in obvestila
 - PDF potrdila in racuni
 - povezava z zunanjim API za opise vaj in slike
@@ -82,7 +81,7 @@ Repo vsebuje zacetni `Next.js` skelet in landing/dashboard zasnovo, ki sluzi kot
 - narocninski paketi in aktivne narocnine
 - prihajajoca placila in opomniki
 - prisotnost (rocni vnos, filtriranje)
-- analitika, uvoz, email obvestila, PDF izvoz
+- analitika, email obvestila, PDF izvoz, katalog vaj iz API-ja
 - sistemske nastavitve
 
 ## Baza
