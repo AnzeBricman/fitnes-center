@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
+  ChatSenderRole,
   DocumentType,
   EmailStatus,
   ExerciseSource,
@@ -12,6 +13,7 @@ import {
   PaymentProvider,
   PaymentStatus,
   SubscriptionStatus,
+  TrainingRequestStatus,
   WorkoutLevel,
   WorkoutStatus,
   TrainerStatus,
@@ -21,7 +23,7 @@ import { fetchExercisesFromApi } from "@/lib/exercise-api";
 import { prisma } from "@/lib/prisma";
 import { ROLE } from "@/lib/roles";
 import { getBaseUrl, getStripe } from "@/lib/stripe";
-import { createSession, hashPassword, verifyPassword, clearSession } from "@/lib/auth";
+import { createSession, hashPassword, verifyPassword, clearSession, getSessionUser } from "@/lib/auth";
 import { cookies } from "next/headers";
 
 function getString(formData: FormData, key: string) {
@@ -77,6 +79,20 @@ function revalidateAdmin() {
   for (const path of adminPaths()) {
     revalidatePath(path);
   }
+}
+
+function revalidateMemberExperience() {
+  revalidatePath("/");
+  revalidatePath("/account");
+  revalidatePath("/trainers");
+  revalidatePath("/workouts");
+  revalidatePath("/trainer");
+}
+
+function getAuthRedirectByRole(role: string) {
+  if (role === ROLE.MEMBER) return "/account";
+  if (role === ROLE.TRAINER) return "/trainer";
+  return "/admin";
 }
 
 export async function createMember(formData: FormData) {
@@ -400,6 +416,90 @@ export async function createAttendance(formData: FormData) {
   }
 
   revalidateAdmin();
+}
+
+export async function reserveWorkout(formData: FormData) {
+  const user = await getSessionUser();
+  if (!user) {
+    redirect("/login");
+  }
+
+  if (!user.memberId) {
+    redirect("/account?booking=member");
+  }
+
+  const memberId = user.memberId;
+  const workoutId = getString(formData, "workoutId");
+  if (!workoutId) return;
+
+  const now = new Date();
+
+  const [member, workout, attendanceCount] = await Promise.all([
+    prisma.member.findUnique({ where: { id: memberId } }),
+    prisma.workout.findUnique({
+      where: { id: workoutId },
+      include: { trainer: true },
+    }),
+    prisma.attendance.count({ where: { workoutId } }),
+  ]);
+
+  if (!member || !workout) {
+    redirect("/workouts?booking=missing");
+  }
+
+  const activeSubscription = await prisma.subscription.findFirst({
+    where: {
+      memberId,
+      active: true,
+      status: SubscriptionStatus.ACTIVE,
+      endDate: { gte: now },
+    },
+  });
+
+  if (!activeSubscription) {
+    redirect("/workouts?booking=subscription");
+  }
+
+  if (workout.status !== WorkoutStatus.SCHEDULED || workout.scheduledAt < now) {
+    redirect("/workouts?booking=closed");
+  }
+
+  if (attendanceCount >= workout.capacity) {
+    redirect("/workouts?booking=full");
+  }
+
+  await prisma.attendance.upsert({
+    where: { memberId_workoutId: { memberId, workoutId } },
+    update: { checkedInAt: new Date(), method: AttendanceMethod.PORTAL },
+    create: { memberId, workoutId, checkedInAt: new Date(), method: AttendanceMethod.PORTAL },
+  });
+
+  revalidateAdmin();
+  revalidateMemberExperience();
+  redirect("/workouts?booking=success");
+}
+
+export async function cancelWorkoutReservation(formData: FormData) {
+  const user = await getSessionUser();
+  if (!user) {
+    redirect("/login");
+  }
+
+  if (!user.memberId) {
+    redirect("/account?booking=member");
+  }
+
+  const memberId = user.memberId;
+  const workoutId = getString(formData, "workoutId");
+  if (!workoutId) return;
+
+  await prisma.attendance.deleteMany({
+    where: { memberId, workoutId },
+  });
+
+  revalidateAdmin();
+  revalidateMemberExperience();
+  redirect("/workouts?booking=cancelled");
 }
 
 export async function createSubscription(formData: FormData) {
@@ -729,7 +829,7 @@ export async function loginUser(formData: FormData) {
   }
 
   await createSession(user.id);
-  redirect(user.role === ROLE.MEMBER ? "/account" : "/admin");
+  redirect(getAuthRedirectByRole(user.role));
 }
 
 export async function logoutUser() {

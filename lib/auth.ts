@@ -73,7 +73,7 @@ export async function getSessionUser() {
   try {
     const session = await prisma.session.findUnique({
       where: { token },
-      include: { user: { include: { member: true } } },
+      include: { user: { include: { member: true, trainer: true } } },
     });
 
     if (!session) return null;
@@ -93,11 +93,17 @@ export async function requireRole(roles: AppRole[]) {
   const user = await getSessionUser();
   if (!user) redirect("/login");
   if (!roles.includes(user.role as AppRole)) redirect("/");
-  return user as User & { member?: { id: string; fullName: string } | null };
+  return user as User & {
+    member?: { id: string; fullName: string } | null;
+    trainer?: { id: string; fullName: string } | null;
+  };
 }
 
 export async function requireUser() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  return user as User & { member?: { id: string; fullName: string } | null };
+  return user as User & {
+    member?: { id: string; fullName: string } | null;
+    trainer?: { id: string; fullName: string } | null;
+  };
 }

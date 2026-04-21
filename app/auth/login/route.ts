@@ -35,7 +35,9 @@ export async function POST(request: Request) {
   }
 
   const { token, expiresAt } = await createSessionToken(user.id);
-  const response = NextResponse.redirect(new URL(user.role === ROLE.MEMBER ? "/account" : "/admin", request.url));
+  const destination =
+    user.role === ROLE.MEMBER ? "/account" : user.role === ROLE.TRAINER ? "/trainer" : "/admin";
+  const response = NextResponse.redirect(new URL(destination, request.url));
   response.cookies.set(getSessionCookieName(), token, getSessionCookieOptions(expiresAt));
 
   return response;
