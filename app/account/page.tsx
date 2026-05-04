@@ -1,5 +1,6 @@
-import { cancelMySubscription, cancelWorkoutReservation, logoutUser } from "@/app/actions";
+import { cancelMySubscription, cancelTrainerReservation, cancelWorkoutReservation, logoutUser } from "@/app/actions";
 import { MemberShell } from "@/components/member-shell";
+import { getActiveSubscription, getPlanPermissions } from "@/lib/plan-permissions";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import Link from "next/link";
@@ -10,14 +11,14 @@ export const dynamic = "force-dynamic";
 export default async function AccountPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ subscription?: string; booking?: string }>;
+  searchParams?: Promise<{ subscription?: string; booking?: string; trainerRequest?: string; payment?: string }>;
 }) {
   const user = await requireUser();
   const memberId = user.memberId;
   const params = (await searchParams) ?? {};
   const now = new Date();
 
-  const [subscriptions, member, upcomingReservations, attendanceCount] = await Promise.all([
+  const [subscriptions, member, upcomingReservations, trainerRequests, attendanceCount] = await Promise.all([
     memberId
       ? prisma.subscription.findMany({
           where: { memberId },
@@ -42,12 +43,25 @@ export default async function AccountPage({
           take: 4,
         })
       : Promise.resolve([]),
+    memberId
+      ? prisma.trainingRequest.findMany({
+          where: {
+            memberId,
+            status: { in: ["PENDING", "CONFIRMED"] },
+          },
+          include: { trainer: true },
+          orderBy: { preferredAt: "asc" },
+          take: 4,
+        })
+      : Promise.resolve([]),
     memberId ? prisma.attendance.count({ where: { memberId } }) : Promise.resolve(0),
   ]);
 
-  const activeSubscription = subscriptions.find((sub) => sub.active) ?? subscriptions[0];
+  const activeSubscription = getActiveSubscription(subscriptions, now) ?? subscriptions[0];
+  const permissions = getPlanPermissions(activeSubscription?.plan);
   const accountStats = [
     { label: "Rezervirani treningi", value: upcomingReservations.length },
+    { label: "Osebni termini", value: trainerRequests.length },
     { label: "Vsi obiski", value: attendanceCount },
     { label: "Status narocnine", value: activeSubscription ? formatLabel(activeSubscription.status) : "Brez paketa" },
   ];
@@ -79,6 +93,12 @@ export default async function AccountPage({
           {params.booking === "member" ? (
             <p className="empty-state">Rezervacija je mozna samo za uporabnika, ki je povezan s clanom v bazi.</p>
           ) : null}
+          {params.trainerRequest === "cancelled" ? (
+            <p className="support-note">Zahteva za osebni termin je preklicana.</p>
+          ) : null}
+          {params.payment === "success" ? (
+            <p className="support-note">Placilo je potrjeno. Tvoja narocnina je aktivna.</p>
+          ) : null}
         </article>
 
         <article className="panel-card">
@@ -96,9 +116,11 @@ export default async function AccountPage({
                 <div><span>Velja do</span><strong>{formatDate(activeSubscription.endDate)}</strong></div>
                 <div><span>Status</span><strong>{formatLabel(activeSubscription.status)}</strong></div>
                 <div><span>Cena</span><strong>{formatCurrency(activeSubscription.plan.priceCents)}</strong></div>
+                <div><span>Pravice</span><strong>{permissions.label}</strong></div>
               </div>
               <div className="action-row account-action-row">
                 <Link href="/workouts" className="primary-button">Rezerviraj trening</Link>
+                <Link href="/trainers" className="ghost-link">Rezerviraj trenerja</Link>
                 <form action={cancelMySubscription} className="account-danger-form">
                   <button className="danger-button" type="submit">Odjavi se od narocnine</button>
                 </form>
@@ -137,6 +159,38 @@ export default async function AccountPage({
                   </div>
                   <form action={cancelWorkoutReservation}>
                     <input type="hidden" name="workoutId" value={reservation.workoutId ?? ""} />
+                    <button className="ghost-link" type="submit">Preklici</button>
+                  </form>
+                </article>
+              ))}
+            </div>
+          )}
+        </article>
+
+        <article className="panel-card panel-card-wide">
+          <div className="panel-card-header">
+            <div>
+              <span className="section-kicker">Osebni trenerji</span>
+              <h3>Moji zahtevani termini</h3>
+            </div>
+            <Link href="/trainers" className="ghost-link">Poglej trenerje</Link>
+          </div>
+          {trainerRequests.length === 0 ? (
+            <p className="empty-state">Trenutno nimas aktivne zahteve za osebni termin s trenerjem.</p>
+          ) : (
+            <div className="reservation-list">
+              {trainerRequests.map((request) => (
+                <article key={request.id} className="reservation-item">
+                  <div>
+                    <strong>{request.trainer.fullName}</strong>
+                    <span>{request.trainer.specialty}</span>
+                  </div>
+                  <div>
+                    <strong>{formatDateTime(request.preferredAt)}</strong>
+                    <span>{formatLabel(request.status)} · {request.durationMin} min</span>
+                  </div>
+                  <form action={cancelTrainerReservation}>
+                    <input type="hidden" name="id" value={request.id} />
                     <button className="ghost-link" type="submit">Preklici</button>
                   </form>
                 </article>

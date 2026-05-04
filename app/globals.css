@@ -1311,6 +1311,18 @@ textarea {
   transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 
+.landing-pricing-grid .pricing-card {
+  height: 100%;
+  grid-template-rows: auto auto 1fr auto;
+}
+
+.landing-pricing-grid .pricing-card .primary-button {
+  width: 100%;
+  min-height: 64px;
+  align-self: end;
+  padding: 1rem 1.2rem;
+}
+
 .pricing-card:hover {
   transform: translateY(-2px);
   border-color: rgba(17, 17, 17, 0.16);

@@ -6,7 +6,7 @@ import { formatCurrency } from "@/lib/utils";
 export default async function RegisterPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ error?: string }>;
+  searchParams?: Promise<{ error?: string; plan?: string; payment?: string }>;
 }) {
   const params = (await searchParams) ?? {};
   let plans: Awaited<ReturnType<typeof prisma.subscriptionPlan.findMany>> = [];
@@ -39,9 +39,21 @@ export default async function RegisterPage({
                 ? "Izpolni vsa polja."
                 : params.error === "password"
                   ? "Geslo mora imeti vsaj 8 znakov."
-                  : params.error === "plan"
-                    ? "Izberi veljaven paket."
+                : params.error === "plan"
+                  ? "Izberi veljaven paket."
+                  : params.error === "stripe"
+                    ? "Stripe placilo trenutno ni na voljo. Preveri nastavitve in poskusi znova."
                     : ""}
+          </p>
+        ) : null}
+
+        {params.payment ? (
+          <p className="empty-state">
+            {params.payment === "cancelled"
+              ? "Placilo je bilo preklicano. Za aktivacijo racuna mora biti paket placan."
+              : params.payment === "failed"
+                ? "Placila ni bilo mogoce potrditi. Poskusi ponovno ali izberi drug paket."
+                : ""}
           </p>
         ) : null}
 
@@ -55,6 +67,7 @@ export default async function RegisterPage({
               {plans.map((plan, index) => {
                 const features = getPlanFeatures(plan.name, plan.description, plan.durationDays);
                 const isFeatured = index === 1;
+                const isSelected = params.plan ? params.plan === plan.id : index === 1;
 
                 return (
                   <label
@@ -65,7 +78,7 @@ export default async function RegisterPage({
                       type="radio"
                       name="planId"
                       value={plan.id}
-                      defaultChecked={index === 1}
+                      defaultChecked={isSelected}
                       required
                     />
                     <div className="pricing-card-top">

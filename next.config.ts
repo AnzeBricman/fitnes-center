@@ -5,8 +5,8 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       { source: "/members", destination: "/admin/members", permanent: false },
-      { source: "/trainers", destination: "/admin/trainers", permanent: false },
-      { source: "/workouts", destination: "/admin/workouts", permanent: false },
+      { source: "/trainer", destination: "/trainers", permanent: false },
+      { source: "/workout", destination: "/workouts", permanent: false },
       {
         source: "/subscriptions",
         destination: "/admin/subscriptions",

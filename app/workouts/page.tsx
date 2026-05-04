@@ -2,6 +2,7 @@ import Link from "next/link";
 import { cancelWorkoutReservation, reserveWorkout } from "@/app/actions";
 import { MemberShell } from "@/components/member-shell";
 import { getSessionUser } from "@/lib/auth";
+import { getPlanPermissions, isSubscriptionActive } from "@/lib/plan-permissions";
 import { prisma } from "@/lib/prisma";
 import { formatDateTime, formatLabel } from "@/lib/utils";
 
@@ -18,7 +19,8 @@ export default async function WorkoutsPage({
   const attendanceFilterMemberId = memberId ?? "__guest__";
   const now = new Date();
 
-  const workouts = await prisma.workout.findMany({
+  const [workouts, activeSubscription] = await Promise.all([
+    prisma.workout.findMany({
     where: {
       scheduledAt: { gte: now },
       status: "SCHEDULED",
@@ -31,7 +33,35 @@ export default async function WorkoutsPage({
     },
     orderBy: { scheduledAt: "asc" },
     take: 18,
-  });
+    }),
+    memberId
+      ? prisma.subscription.findFirst({
+          where: { memberId, active: true, status: "ACTIVE", endDate: { gte: now } },
+          include: { plan: true },
+          orderBy: { endDate: "desc" },
+        })
+      : Promise.resolve(null),
+  ]);
+
+  const permissions = getPlanPermissions(activeSubscription?.plan);
+  const hasActiveSubscription = isSubscriptionActive(activeSubscription, now);
+  const usedWorkoutReservations =
+    memberId && activeSubscription && permissions.monthlyWorkoutLimit !== null
+      ? await prisma.attendance.count({
+          where: {
+            memberId,
+            workoutId: { not: null },
+            workout: {
+              scheduledAt: {
+                gte: activeSubscription.startDate,
+                lte: activeSubscription.endDate,
+              },
+            },
+          },
+        })
+      : 0;
+  const reachedWorkoutLimit =
+    permissions.monthlyWorkoutLimit !== null && usedWorkoutReservations >= permissions.monthlyWorkoutLimit;
 
   const bookingMessage =
     params.booking === "success"
@@ -46,7 +76,11 @@ export default async function WorkoutsPage({
               ? "Ta termin ni vec na voljo za rezervacijo."
               : params.booking === "missing"
                 ? "Izbrani trening ne obstaja vec."
-                : "";
+                : params.booking === "plan"
+                  ? "Tvoj trenutni paket ne vkljucuje rezervacij skupinskih treningov."
+                  : params.booking === "limit"
+                    ? "Dosegel si limit rezervacij za trenutni paket."
+                    : "";
 
   return (
     <MemberShell
@@ -64,6 +98,15 @@ export default async function WorkoutsPage({
       {bookingMessage ? (
         <p className={params.booking === "success" || params.booking === "cancelled" ? "support-note" : "empty-state"}>
           {bookingMessage}
+        </p>
+      ) : null}
+
+      {user?.role === "MEMBER" && activeSubscription ? (
+        <p className="support-note">
+          Paket {activeSubscription.plan.name}: {permissions.label}
+          {permissions.monthlyWorkoutLimit !== null
+            ? ` (${usedWorkoutReservations}/${permissions.monthlyWorkoutLimit} porabljeno)`
+            : ""}
         </p>
       ) : null}
 
@@ -128,8 +171,25 @@ export default async function WorkoutsPage({
                   ) : (
                     <form action={reserveWorkout} className="booking-form-inline">
                       <input type="hidden" name="workoutId" value={workout.id} />
-                      <button className="primary-button" type="submit" disabled={remainingSpots === 0}>
-                        {remainingSpots === 0 ? "Zapolnjeno" : "Rezerviraj"}
+                      <button
+                        className="primary-button"
+                        type="submit"
+                        disabled={
+                          remainingSpots === 0 ||
+                          !hasActiveSubscription ||
+                          !permissions.canReserveWorkouts ||
+                          reachedWorkoutLimit
+                        }
+                      >
+                        {remainingSpots === 0
+                          ? "Zapolnjeno"
+                          : !hasActiveSubscription
+                            ? "Aktiviraj paket"
+                            : !permissions.canReserveWorkouts
+                              ? "Ni v paketu"
+                              : reachedWorkoutLimit
+                                ? "Limit dosezen"
+                                : "Rezerviraj"}
                       </button>
                     </form>
                   )

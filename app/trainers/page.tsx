@@ -1,6 +1,7 @@
 import { MemberShell } from "@/components/member-shell";
 import { prisma } from "@/lib/prisma";
 import { formatDate, formatLabel } from "@/lib/utils";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,9 @@ export default async function TrainersPage() {
               </strong>
               <small>{trainer.workouts[0]?.title ?? "Objava novega termina kmalu."}</small>
             </div>
+            <Link href={`/trainers/${trainer.id}`} className="primary-button">
+              Odpri trenerja
+            </Link>
           </article>
         ))}
       </section>

@@ -24,6 +24,7 @@ import { prisma } from "@/lib/prisma";
 import { ROLE } from "@/lib/roles";
 import { getBaseUrl, getStripe } from "@/lib/stripe";
 import { createSession, hashPassword, verifyPassword, clearSession, getSessionUser } from "@/lib/auth";
+import { getPlanPermissions, isSubscriptionActive } from "@/lib/plan-permissions";
 import { cookies } from "next/headers";
 
 function getString(formData: FormData, key: string) {
@@ -303,6 +304,48 @@ async function trainerHasConflict(
   });
 }
 
+async function trainerHasPersonalReservationConflict(
+  trainerId: string,
+  start: Date,
+  durationMin: number,
+) {
+  const dayStart = new Date(start);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(start);
+  dayEnd.setHours(23, 59, 59, 999);
+
+  const requests = await prisma.trainingRequest.findMany({
+    where: {
+      trainerId,
+      preferredAt: { gte: dayStart, lte: dayEnd },
+      status: { in: [TrainingRequestStatus.PENDING, TrainingRequestStatus.CONFIRMED] },
+    },
+    select: { preferredAt: true, durationMin: true },
+  });
+
+  const startMs = start.getTime();
+  const endMs = startMs + durationMin * 60_000;
+
+  return requests.some((request) => {
+    const requestStart = request.preferredAt.getTime();
+    const requestEnd = requestStart + request.durationMin * 60_000;
+    return startMs < requestEnd && endMs > requestStart;
+  });
+}
+
+async function trainerIsAvailableForReservation(
+  trainerId: string,
+  start: Date,
+  durationMin: number,
+) {
+  const [hasWorkoutConflict, hasPersonalConflict] = await Promise.all([
+    trainerHasConflict(trainerId, start, durationMin),
+    trainerHasPersonalReservationConflict(trainerId, start, durationMin),
+  ]);
+
+  return !hasWorkoutConflict && !hasPersonalConflict;
+}
+
 export async function createWorkout(formData: FormData) {
   const title = getString(formData, "title");
   const trainerId = getString(formData, "trainerId");
@@ -454,14 +497,43 @@ export async function reserveWorkout(formData: FormData) {
       status: SubscriptionStatus.ACTIVE,
       endDate: { gte: now },
     },
+    include: { plan: true },
   });
 
-  if (!activeSubscription) {
+  if (!activeSubscription || !isSubscriptionActive(activeSubscription, now)) {
     redirect("/workouts?booking=subscription");
+  }
+
+  const permissions = getPlanPermissions(activeSubscription.plan);
+  if (!permissions.canReserveWorkouts) {
+    redirect("/workouts?booking=plan");
   }
 
   if (workout.status !== WorkoutStatus.SCHEDULED || workout.scheduledAt < now) {
     redirect("/workouts?booking=closed");
+  }
+
+  const existingReservation = await prisma.attendance.findUnique({
+    where: { memberId_workoutId: { memberId, workoutId } },
+  });
+
+  if (!existingReservation && permissions.monthlyWorkoutLimit !== null) {
+    const reservationCount = await prisma.attendance.count({
+      where: {
+        memberId,
+        workoutId: { not: null },
+        workout: {
+          scheduledAt: {
+            gte: activeSubscription.startDate,
+            lte: activeSubscription.endDate,
+          },
+        },
+      },
+    });
+
+    if (reservationCount >= permissions.monthlyWorkoutLimit) {
+      redirect("/workouts?booking=limit");
+    }
   }
 
   if (attendanceCount >= workout.capacity) {
@@ -477,6 +549,116 @@ export async function reserveWorkout(formData: FormData) {
   revalidateAdmin();
   revalidateMemberExperience();
   redirect("/workouts?booking=success");
+}
+
+export async function requestTrainerReservation(formData: FormData) {
+  const user = await getSessionUser();
+  if (!user) {
+    redirect("/login");
+  }
+
+  if (!user.memberId) {
+    redirect("/account?booking=member");
+  }
+
+  const memberId = user.memberId;
+  const trainerId = getString(formData, "trainerId");
+  const preferredAt = getDate(formData, "preferredAt");
+  const durationMin = getInt(formData, "durationMin") || 60;
+  const note = getOptionalString(formData, "note");
+
+  if (!trainerId || Number.isNaN(preferredAt.getTime())) {
+    redirect("/trainers?trainerRequest=missing");
+  }
+
+  const now = new Date();
+  if (preferredAt <= now) {
+    redirect(`/trainers/${trainerId}?trainerRequest=past`);
+  }
+
+  const [activeSubscription, trainer] = await Promise.all([
+    prisma.subscription.findFirst({
+      where: {
+        memberId,
+        active: true,
+        status: SubscriptionStatus.ACTIVE,
+        endDate: { gte: now },
+      },
+      include: { plan: true },
+    }),
+    prisma.trainer.findUnique({ where: { id: trainerId } }),
+  ]);
+
+  if (!activeSubscription || !isSubscriptionActive(activeSubscription, now)) {
+    redirect(`/trainers/${trainerId}?trainerRequest=subscription`);
+  }
+
+  if (!trainer || trainer.status !== TrainerStatus.ACTIVE) {
+    redirect("/trainers?trainerRequest=missing");
+  }
+
+  const permissions = getPlanPermissions(activeSubscription.plan);
+  if (!permissions.canRequestTrainer) {
+    redirect(`/trainers/${trainerId}?trainerRequest=plan`);
+  }
+
+  const trainerAvailable = await trainerIsAvailableForReservation(trainerId, preferredAt, durationMin);
+  if (!trainerAvailable) {
+    redirect(`/trainers/${trainerId}?trainerRequest=busy`);
+  }
+
+  await prisma.trainingRequest.create({
+    data: {
+      memberId,
+      trainerId,
+      preferredAt,
+      durationMin,
+      note,
+      status: TrainingRequestStatus.CONFIRMED,
+      trainerAvailable: true,
+      messages: note
+        ? {
+            create: {
+              senderRole: ChatSenderRole.MEMBER,
+              senderName: user.member?.fullName ?? user.email,
+              body: note,
+            },
+          }
+        : undefined,
+    },
+  });
+
+  revalidateAdmin();
+  revalidateMemberExperience();
+  revalidatePath(`/trainers/${trainerId}`);
+  redirect(`/trainers/${trainerId}?trainerRequest=confirmed`);
+}
+
+export async function cancelTrainerReservation(formData: FormData) {
+  const user = await getSessionUser();
+  if (!user) {
+    redirect("/login");
+  }
+
+  if (!user.memberId) {
+    redirect("/account?booking=member");
+  }
+
+  const id = getString(formData, "id");
+  if (!id) return;
+
+  await prisma.trainingRequest.updateMany({
+    where: {
+      id,
+      memberId: user.memberId,
+      status: { in: [TrainingRequestStatus.PENDING, TrainingRequestStatus.CONFIRMED] },
+    },
+    data: { status: TrainingRequestStatus.CANCELLED },
+  });
+
+  revalidateAdmin();
+  revalidateMemberExperience();
+  redirect("/account?trainerRequest=cancelled");
 }
 
 export async function cancelWorkoutReservation(formData: FormData) {

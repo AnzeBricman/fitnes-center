@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
-import { MemberStatus, SubscriptionStatus } from "@prisma/client";
+import { MemberStatus, PaymentProvider, PaymentStatus, SubscriptionStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ROLE } from "@/lib/roles";
+import { getBaseUrl, getStripe } from "@/lib/stripe";
 import {
-  createSessionToken,
-  getSessionCookieName,
-  getSessionCookieOptions,
   hashPassword,
 } from "@/lib/auth";
 
@@ -46,24 +44,29 @@ export async function POST(request: Request) {
     return redirectWithError(request, "plan");
   }
 
+  const stripe = getStripe();
+  if (!stripe) {
+    return redirectWithError(request, "stripe");
+  }
+
   const member = await prisma.member.upsert({
     where: { email },
-    update: { fullName, status: MemberStatus.ACTIVE },
-    create: { fullName, email, status: MemberStatus.ACTIVE, joinedAt: new Date() },
+    update: { fullName, status: MemberStatus.INACTIVE },
+    create: { fullName, email, status: MemberStatus.INACTIVE, joinedAt: new Date() },
   });
 
   const startDate = new Date();
   const endDate = new Date(startDate);
   endDate.setDate(endDate.getDate() + plan.durationDays);
 
-  await prisma.subscription.create({
+  const subscription = await prisma.subscription.create({
     data: {
       memberId: member.id,
       planId: plan.id,
       startDate,
       endDate,
-      active: true,
-      status: SubscriptionStatus.ACTIVE,
+      active: false,
+      status: SubscriptionStatus.PENDING,
     },
   });
 
@@ -76,9 +79,51 @@ export async function POST(request: Request) {
     },
   });
 
-  const { token, expiresAt } = await createSessionToken(user.id);
-  const response = NextResponse.redirect(new URL("/account", request.url));
-  response.cookies.set(getSessionCookieName(), token, getSessionCookieOptions(expiresAt));
+  const payment = await prisma.payment.create({
+    data: {
+      memberId: member.id,
+      subscriptionId: subscription.id,
+      amountCents: plan.priceCents,
+      provider: PaymentProvider.STRIPE,
+      status: PaymentStatus.PENDING,
+      description: `Narocnina ${plan.name} za ${member.fullName}`,
+    },
+  });
 
-  return response;
+  const session = await stripe.checkout.sessions.create({
+    mode: "payment",
+    success_url: `${getBaseUrl()}/auth/register/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${getBaseUrl()}/register?payment=cancelled&plan=${plan.id}`,
+    customer_email: email,
+    metadata: {
+      paymentId: payment.id,
+      subscriptionId: subscription.id,
+      memberId: member.id,
+      userId: user.id,
+      flow: "registration",
+    },
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency: "eur",
+          unit_amount: plan.priceCents,
+          product_data: {
+            name: plan.name,
+            description: plan.description || "Mesecna fitnes narocnina",
+          },
+        },
+      },
+    ],
+  });
+
+  await prisma.payment.update({
+    where: { id: payment.id },
+    data: { stripeCheckoutSessionId: session.id },
+  });
+
+  return NextResponse.redirect(
+    session.url ?? new URL(`/register?error=stripe&plan=${plan.id}`, request.url),
+    303,
+  );
 }

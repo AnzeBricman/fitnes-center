@@ -53,9 +53,9 @@ const trainerSeed = [
 ];
 
 const planSeed = [
-  { name: "Starter", priceCents: 2900, durationDays: 30, description: "Dostop do fitnesa vsak dan do 15:00." },
-  { name: "Core", priceCents: 4900, durationDays: 30, description: "Celodnevni dostop in 4 skupinski treningi mesecno." },
-  { name: "Elite", priceCents: 6900, durationDays: 30, description: "Neomejeni skupinski treningi in prednostne rezervacije." },
+  { name: "Starter", priceCents: 2900, durationDays: 30, description: "Dostop do fitnesa vsak dan do 15:00, brez rezervacij treningov." },
+  { name: "Core", priceCents: 4900, durationDays: 30, description: "Celodnevni dostop in 4 rezervacije skupinskih treningov v obdobju narocnine." },
+  { name: "Elite", priceCents: 6900, durationDays: 30, description: "Neomejene rezervacije skupinskih treningov in rezervacija osebnega trenerja, ce je trener prost." },
 ];
 
 const memberSeed = [

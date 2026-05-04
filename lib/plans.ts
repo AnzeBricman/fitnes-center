@@ -8,8 +8,9 @@ export function getPlanFeatures(name: string, description: string | null, durati
     return [
       ...baseFeatures,
       "Dostop do fitnesa v dopoldanskem terminu",
-      "Odlicno za zacetek in uvajanje rutine",
-      "Najbolj ugodna mesecna izbira",
+      "Brez rezervacij skupinskih treningov",
+      "Brez rezervacije osebnega trenerja",
+      "Pregled trenerjev in lastnega racuna",
     ];
   }
 
@@ -17,7 +18,9 @@ export function getPlanFeatures(name: string, description: string | null, durati
     return [
       ...baseFeatures,
       "Celodnevni dostop do fitnes centra",
-      "Vkljuceni skupinski treningi",
+      "4 rezervacije skupinskih treningov v obdobju narocnine",
+      "Pregled vseh trenerjev in njihovih terminov",
+      "Brez rezervacije osebnega trenerja",
       "Najboljse razmerje med ceno in ponudbo",
     ];
   }
@@ -25,8 +28,9 @@ export function getPlanFeatures(name: string, description: string | null, durati
   if (name.toLowerCase().includes("elite")) {
     return [
       ...baseFeatures,
-      "Neomejeni skupinski treningi",
-      "Prednostne rezervacije terminov",
+      "Neomejene rezervacije skupinskih treningov",
+      "Rezervacija osebnega trenerja, ce je trener prost",
+      "Pregled in preklic osebnih terminov v racunu",
       "Najvec ugodnosti za redne clane",
     ];
   }
