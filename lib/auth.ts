@@ -92,7 +92,9 @@ export async function getSessionUser() {
 export async function requireRole(roles: AppRole[]) {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  if (!roles.includes(user.role as AppRole)) redirect("/");
+  if (!roles.includes(user.role as AppRole)) {
+    redirect(user.role === "MEMBER" ? "/account" : "/");
+  }
   return user as User & {
     member?: { id: string; fullName: string } | null;
     trainer?: { id: string; fullName: string } | null;

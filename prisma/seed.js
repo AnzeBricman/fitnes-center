@@ -142,12 +142,23 @@ async function main() {
 
   let workouts = await prisma.workout.findMany();
   if (workouts.length === 0) {
+    const firstWorkoutDate = new Date();
+    firstWorkoutDate.setDate(firstWorkoutDate.getDate() + 1);
+    firstWorkoutDate.setHours(7, 0, 0, 0);
+
     workouts = await Promise.all(
       Array.from({ length: 8 }).map((_, index) =>
         prisma.workout.create({
           data: {
             title: ["Jutranji HIIT", "Strength Base", "Core Flow", "Mobility Reset"][index % 4],
-            scheduledAt: new Date(2026, 3, 14 + index, 7 + (index % 4) * 3, 0, 0),
+            scheduledAt: new Date(
+              firstWorkoutDate.getFullYear(),
+              firstWorkoutDate.getMonth(),
+              firstWorkoutDate.getDate() + index,
+              7 + (index % 4) * 3,
+              0,
+              0,
+            ),
             durationMin: 45 + (index % 3) * 15,
             capacity: 12 + (index % 4) * 2,
             level: ["BEGINNER", "INTERMEDIATE", "ADVANCED"][index % 3],

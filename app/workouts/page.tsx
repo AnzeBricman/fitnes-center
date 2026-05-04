@@ -67,6 +67,12 @@ export default async function WorkoutsPage({
         </p>
       ) : null}
 
+      {workouts.length === 0 ? (
+        <p className="empty-state">
+          Trenutno ni razpisanega nobenega prihodnjega termina za izbrani filter.
+        </p>
+      ) : null}
+
       <section className="workout-card-grid">
         {workouts.map((workout) => {
           const booked = Array.isArray(workout.attendances) && workout.attendances.length > 0;

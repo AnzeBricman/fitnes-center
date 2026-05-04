@@ -1,8 +1,29 @@
 
 > fitnes-center@0.1.0 dev
-> npm run clean && next dev --turbopack
+> npm run clean && next dev
 
 
 > fitnes-center@0.1.0 clean
 > powershell -NoProfile -Command "if (Test-Path .next) { Remove-Item -LiteralPath .next -Recurse -Force }; if (Test-Path .next-dev) { Remove-Item -LiteralPath .next-dev -Recurse -Force }; if (Test-Path .next-dev-3002.log) { Remove-Item -LiteralPath .next-dev-3002.log -Force }; if (Test-Path .next-dev-3002.err.log) { Remove-Item -LiteralPath .next-dev-3002.err.log -Force }; if (Test-Path .next-start-3003.log) { Remove-Item -LiteralPath .next-start-3003.log -Force }; if (Test-Path .next-start-3003.err.log) { Remove-Item -LiteralPath .next-start-3003.err.log -Force }"
 
+   ▲ Next.js 15.5.14
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.0.36:3000
+   - Environments: .env.local, .env
+
+ ✓ Starting...
+ ✓ Ready in 2.2s
+ ○ Compiling /register ...
+ ✓ Compiled /register in 3.2s (601 modules)
+ GET /register 200 in 4316ms
+ ○ Compiling /admin/workouts ...
+ ✓ Compiled /admin/workouts in 1135ms (882 modules)
+ GET /admin/workouts 307 in 2085ms
+ ✓ Compiled /login in 238ms (884 modules)
+ GET /login 200 in 449ms
+ ✓ Compiled in 334ms (656 modules)
+ GET /admin/workouts 307 in 509ms
+ GET /login 200 in 76ms
+ ○ Compiling /account ...
+ ✓ Compiled /account in 862ms (878 modules)
+ GET /account 200 in 3286ms
